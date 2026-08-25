@@ -4,7 +4,7 @@ import { SYSTEM_PROMPT } from "./prompts.js";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
+  "Access-Control-Allow-Headers": "Content-Type, Authorization"
 };
 
 function json(data, status = 200) {
@@ -14,14 +14,21 @@ function json(data, status = 200) {
   });
 }
 
+function isAuthorized(request, env) {
+  const authorization = request.headers.get("Authorization");
+
+  if (!authorization) {
+    return false;
+  }
+
+  return authorization === `Bearer ${env.BERTHO_AI_SECRET}`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // ─────────────────────────────
-    // CORS
-    // ─────────────────────────────
-
+    // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -29,10 +36,18 @@ export default {
       });
     }
 
-    // ─────────────────────────────
-    // HEALTH CHECK
-    // ─────────────────────────────
+    // Toutes les routes sensibles sont protégées.
+    if (!isAuthorized(request, env)) {
+      return json(
+        {
+          success: false,
+          error: "unauthorized"
+        },
+        401
+      );
+    }
 
+    // HEALTH
     if (
       request.method === "GET" &&
       url.pathname === "/health"
@@ -44,10 +59,7 @@ export default {
       });
     }
 
-    // ─────────────────────────────
-    // DIRECT AI TEST
-    // ─────────────────────────────
-
+    // TEST AI
     if (
       request.method === "GET" &&
       url.pathname === "/test-ai"
@@ -57,7 +69,7 @@ export default {
           {
             role: "user",
             content:
-              "Réponds simplement : Bonjour, Bertho AI est opérationnelle."
+              "Réponds simplement : Bertho AI est opérationnelle."
           }
         ]);
 
@@ -67,34 +79,25 @@ export default {
         });
 
       } catch (error) {
-        console.error(
-          "TEST AI ERROR:",
-          error
-        );
+        console.error("TEST AI ERROR:", error);
 
         return json(
           {
             success: false,
-            error:
-              error.message ||
-              String(error)
+            error: error.message || String(error)
           },
           500
         );
       }
     }
 
-    // ─────────────────────────────
     // CHAT
-    // ─────────────────────────────
-
     if (
       request.method === "POST" &&
       url.pathname === "/chat"
     ) {
       try {
-        const body =
-          await request.json();
+        const body = await request.json();
 
         if (
           !body.message ||
@@ -119,9 +122,7 @@ export default {
             role: "system",
             content: SYSTEM_PROMPT
           },
-
           ...history,
-
           {
             role: "user",
             content: body.message
@@ -157,10 +158,6 @@ export default {
         );
       }
     }
-
-    // ─────────────────────────────
-    // ROUTE NOT FOUND
-    // ─────────────────────────────
 
     return json(
       {
