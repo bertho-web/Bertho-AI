@@ -1,68 +1,94 @@
 import { generateResponse } from "./model.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "https://bertho-ai.pages.dev",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type"
+};
+
+function json(data, status = 200) {
+  return Response.json(data, {
+    status,
+    headers: corsHeaders
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
+    
+    // CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
+    }
+    
+    // Health check
     if (request.method === "GET" && url.pathname === "/health") {
-      return Response.json({
+      return json({
         success: true,
         service: "bertho-ai",
         status: "online"
       });
     }
-
+    
+    // Chat
     if (request.method === "POST" && url.pathname === "/chat") {
       try {
         const body = await request.json();
-
-        if (!body.message) {
-          return Response.json(
+        
+        if (!body.message || typeof body.message !== "string") {
+          return json(
             {
               success: false,
               error: "message_required"
             },
-            { status: 400 }
+            400
           );
         }
-
+        
         const messages = [
           {
             role: "system",
             content: SYSTEM_PROMPT
           },
-          ...(body.history || []),
+          ...(Array.isArray(body.history) ? body.history : []),
           {
             role: "user",
             content: body.message
           }
         ];
-
+        
         const result = await generateResponse(env, messages);
-
-        return Response.json({
+        
+        return json({
           success: true,
           message: result.response || result
         });
-
+        
       } catch (error) {
-        return Response.json(
+        console.error("AI request failed:", error);
+        
+        return json(
           {
             success: false,
             error: "ai_request_failed"
           },
-          { status: 500 }
+          500
         );
       }
     }
-
-    return Response.json(
+    
+    // Route inconnue
+    return json(
       {
         success: false,
         error: "route_not_found"
       },
-      { status: 404 }
+      404
     );
   }
 };

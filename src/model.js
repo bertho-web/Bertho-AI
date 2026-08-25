@@ -1,9 +1,9 @@
-const MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 
 export async function generateResponse(env, messages) {
-const response = await env.AI.run(MODEL, {
-messages
-});
-
-return response;
+  const response = await env.AI.run(MODEL, {
+    messages
+  });
+  
+  return response;
 }
