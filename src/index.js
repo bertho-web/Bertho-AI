@@ -2,7 +2,7 @@ import { generateResponse } from "./model.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://bertho-ai.pages.dev",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type"
 };
