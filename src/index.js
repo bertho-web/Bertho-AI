@@ -2,7 +2,7 @@ import { generateResponse } from "./model.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://bertho-ai.pages.dev",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type"
 };
@@ -34,7 +34,32 @@ export default {
         status: "online"
       });
     }
-    
+if (request.method === "GET" && url.pathname === "/test-ai") {
+  try {
+    const result = await generateResponse(env, [
+      {
+        role: "user",
+        content: "Réponds simplement : Bonjour, Bertho AI est opérationnelle."
+      }
+    ]);
+
+    return json({
+      success: true,
+      result
+    });
+
+  } catch (error) {
+    console.error("TEST AI ERROR:", error);
+
+    return json(
+      {
+        success: false,
+        error: error.message || String(error)
+      },
+      500
+    );
+  }
+}
     // Chat
     if (request.method === "POST" && url.pathname === "/chat") {
       try {
