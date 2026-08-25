@@ -1,0 +1,6 @@
+name = "bertho-ai"
+main = "src/index.js"
+compatibility_date = "2026-08-20"
+
+[ai]
+binding = "AI"
