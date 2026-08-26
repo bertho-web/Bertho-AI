@@ -1,5 +1,5 @@
 import { generateResponse } from "./model.js";
-import { SYSTEM_PROMPT } from "./prompts.js";
+import { buildSystemPrompt } from "./prompts.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,7 +98,10 @@ export default {
     ) {
       try {
         const body = await request.json();
-
+const product =
+  typeof body.product === "string" ?
+  body.product :
+  "unknown";
         if (
           !body.message ||
           typeof body.message !== "string"
@@ -120,7 +123,7 @@ export default {
         const messages = [
           {
             role: "system",
-            content: SYSTEM_PROMPT
+            content: buildSystemPrompt(product)
           },
           ...history,
           {
