@@ -34,232 +34,131 @@ const VALID_LANGUAGES = [
   "bm"
 ];
 
-
-// ============================================================
-// NORMALISATION
-// ============================================================
-
 function normalizeString(value) {
-
-  if (
-    typeof value !== "string"
-  ) {
+  if (typeof value !== "string") {
     return null;
   }
 
-  const normalized =
-    value.trim().toLowerCase();
+  const result = value.trim().toLowerCase();
 
-  return normalized || null;
+  return result || null;
 }
 
-
-// ============================================================
-// PRODUCT
-// ============================================================
-
 function normalizeProduct(value) {
+  const product = normalizeString(value);
 
-  const product =
-    normalizeString(value);
-
-  if (
-    !product ||
-    !VALID_PRODUCTS.includes(product)
-  ) {
+  if (!product) {
     return "ecosystem";
   }
 
-  return product;
+  return VALID_PRODUCTS.includes(product)
+    ? product
+    : "ecosystem";
 }
 
-
-// ============================================================
-// AREA
-// ============================================================
-
 function normalizeArea(value) {
+  const area = normalizeString(value);
 
-  const area =
-    normalizeString(value);
-
-  if (
-    !area ||
-    !VALID_AREAS.includes(area)
-  ) {
+  if (!area) {
     return "general";
   }
 
-  return area;
+  return VALID_AREAS.includes(area)
+    ? area
+    : "general";
 }
 
-
-// ============================================================
-// LANGUAGE
-// ============================================================
-
 function normalizeLanguage(value) {
+  const language = normalizeString(value);
 
-  const language =
-    normalizeString(value);
-
-  if (
-    !language ||
-    !VALID_LANGUAGES.includes(language)
-  ) {
+  if (!language) {
     return null;
   }
 
-  return language;
+  return VALID_LANGUAGES.includes(language)
+    ? language
+    : null;
 }
 
 
 // ============================================================
-// CONTEXT CREATION
+// CREATE CONTEXT
 // ============================================================
 
-export function createContext(input = {}) {
+export function createContext(body = {}) {
 
-  const context =
-    input.context || {};
-
+  const input =
+    body.context &&
+    typeof body.context === "object"
+      ? body.context
+      : {};
 
   return {
 
     product:
       normalizeProduct(
-        context.product
+        input.product || body.product
       ),
 
     area:
       normalizeArea(
-        context.area
+        input.area
       ),
 
     page:
       normalizeString(
-        context.page
+        input.page
       ),
 
     source:
       normalizeString(
-        context.source
+        input.source
       ),
 
     language:
       normalizeLanguage(
-        context.language
-      ),
-
-    authenticated:
-      Boolean(
-        input.authenticated
-      ),
-
-    userId:
-      input.userId || null,
-
-    timestamp:
-      new Date().toISOString()
+        input.language
+      )
 
   };
-
 }
 
 
 // ============================================================
-// CONTEXT DESCRIPTION
+// CONTEXT → AI INSTRUCTIONS
 // ============================================================
 
-export function describeContext(
-  context
-) {
-
-  const product =
-    context?.product ||
-    "ecosystem";
-
-  const area =
-    context?.area ||
-    "general";
-
-  const page =
-    context?.page ||
-    "unknown";
-
-  const language =
-    context?.language ||
-    "auto";
-
-  return {
-
-    product,
-
-    area,
-
-    page,
-
-    language,
-
-    source:
-      context?.source ||
-      null
-
-  };
-
-}
-
-
-// ============================================================
-// AI CONTEXT INSTRUCTIONS
-// ============================================================
-
-export function buildContextInstructions(
-  context
-) {
-
-  const description =
-    describeContext(
-      context
-    );
-
+export function buildContextInstructions(context) {
 
   return `
-CONTEXTE DE LA REQUÊTE
+CONTEXTE ACTUEL DE L'UTILISATEUR
 
 Produit :
-${description.product}
+${context.product}
 
 Espace :
-${description.area}
+${context.area}
 
 Page :
-${description.page}
-
-Langue demandée :
-${description.language}
+${context.page || "inconnue"}
 
 Source :
-${description.source || "non spécifiée"}
+${context.source || "inconnue"}
 
-RÈGLES DE CONTEXTE
+Langue :
+${context.language || "auto-détection"}
 
-1. Adapte ta réponse au produit et à l'espace dans lequel l'utilisateur se trouve.
 
-2. Ne présente jamais comme disponible une fonctionnalité qui est seulement prévue ou en développement.
+RÈGLES
 
-3. Ne crée jamais de produit, service, domaine ou URL officielle qui n'existe pas dans les informations officielles de Bertho.
-
-4. Si la demande concerne un autre produit de l'écosystème, tu peux l'expliquer ou orienter l'utilisateur vers celui-ci uniquement si ce produit existe officiellement et que cette orientation est pertinente.
-
-5. Si l'utilisateur est déjà dans un espace Bertho pertinent, reconnais ce contexte naturellement au lieu de l'ignorer.
-
-6. Dans l'espace Bertho AI, tu peux proposer un accompagnement plus large : apprentissage, développement, recherche, analyse et utilisation des outils disponibles.
-
-7. Dans les autres espaces, privilégie l'accompagnement lié à la mission de la plateforme et évite de détourner inutilement l'utilisateur vers Bertho AI.
-
-8. Si le contexte ne permet pas de déterminer précisément le produit concerné, ne l'invente pas. Réponds de manière générale ou demande une précision.
-
-9. La langue doit être adaptée à la langue explicitement fournie. Si aucune langue n'est fournie, déduis-la du message de l'utilisateur.
+- Adapte naturellement ta réponse au contexte actuel.
+- Si l'utilisateur se trouve déjà dans un produit Bertho, reconnais ce contexte lorsque cela est pertinent.
+- Ne prétends jamais qu'un produit, service ou fonctionnalité existe si les informations officielles ne le confirment pas.
+- Ne révèle jamais d'informations internes ou de secrets techniques.
+- N'oriente pas inutilement l'utilisateur vers un autre produit Bertho.
+- Si une autre plateforme Bertho est réellement pertinente, explique clairement pourquoi.
+- Dans l'espace Bertho AI, tu peux fournir un accompagnement plus large : apprentissage, développement, recherche, analyse et assistance technique.
+- Dans les autres espaces, reste prioritairement pertinent au contexte de cet espace.
+- Si le contexte est insuffisant, ne l'invente pas.
 `;
 }

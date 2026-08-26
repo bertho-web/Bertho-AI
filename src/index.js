@@ -2,6 +2,11 @@ import { generateResponse } from "./model.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { isAuthorized } from "./auth.js";
 
+import {
+  createContext,
+  buildContextInstructions
+} from "./context.js";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -19,7 +24,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // CORS preflight
+    // ============================================================
+    // CORS PREFLIGHT
+    // ============================================================
+
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -27,7 +35,10 @@ export default {
       });
     }
 
-    // Toutes les routes sensibles sont protégées.
+    // ============================================================
+    // AUTHENTICATION
+    // ============================================================
+
     if (!isAuthorized(request, env)) {
       return json(
         {
@@ -38,7 +49,10 @@ export default {
       );
     }
 
+    // ============================================================
     // HEALTH
+    // ============================================================
+
     if (
       request.method === "GET" &&
       url.pathname === "/health"
@@ -50,7 +64,10 @@ export default {
       });
     }
 
+    // ============================================================
     // TEST AI
+    // ============================================================
+
     if (
       request.method === "GET" &&
       url.pathname === "/test-ai"
@@ -70,29 +87,47 @@ export default {
         });
 
       } catch (error) {
-        console.error("TEST AI ERROR:", error);
+        console.error(
+          "TEST AI ERROR:",
+          error
+        );
 
         return json(
           {
             success: false,
-            error: error.message || String(error)
+            error:
+              error.message ||
+              String(error)
           },
           500
         );
       }
     }
 
+    // ============================================================
     // CHAT
+    // ============================================================
+
     if (
       request.method === "POST" &&
       url.pathname === "/chat"
     ) {
       try {
-        const body = await request.json();
-const product =
-  typeof body.product === "string" ?
-  body.product :
-  "unknown";
+
+        const body =
+          await request.json();
+
+        // --------------------------------------------------------
+        // CONTEXT
+        // --------------------------------------------------------
+
+        const context =
+          createContext(body);
+
+        // --------------------------------------------------------
+        // MESSAGE VALIDATION
+        // --------------------------------------------------------
+
         if (
           !body.message ||
           typeof body.message !== "string"
@@ -106,22 +141,60 @@ const product =
           );
         }
 
+        // --------------------------------------------------------
+        // HISTORY
+        // --------------------------------------------------------
+
         const history =
           Array.isArray(body.history)
             ? body.history
             : [];
 
+        // --------------------------------------------------------
+        // SYSTEM PROMPT
+        // --------------------------------------------------------
+
+        const systemPrompt =
+          buildSystemPrompt(
+            context.product
+          );
+
+        // --------------------------------------------------------
+        // CONTEXT INSTRUCTIONS
+        // --------------------------------------------------------
+
+        const contextInstructions =
+          buildContextInstructions(
+            context
+          );
+
+        // --------------------------------------------------------
+        // FINAL MESSAGES
+        // --------------------------------------------------------
+
         const messages = [
+
           {
             role: "system",
-            content: buildSystemPrompt(product)
+            content:
+              systemPrompt +
+              "\n\n" +
+              contextInstructions
           },
+
           ...history,
+
           {
             role: "user",
-            content: body.message
+            content:
+              body.message
           }
+
         ];
+
+        // --------------------------------------------------------
+        // AI
+        // --------------------------------------------------------
 
         const result =
           await generateResponse(
@@ -129,13 +202,24 @@ const product =
             messages
           );
 
+        // --------------------------------------------------------
+        // RESPONSE
+        // --------------------------------------------------------
+
         return json({
+
           success: true,
+
           message:
-            result.response || result
+            result.response ||
+            result,
+
+          context
+
         });
 
       } catch (error) {
+
         console.error(
           "AI REQUEST ERROR:",
           error
@@ -152,6 +236,10 @@ const product =
         );
       }
     }
+
+    // ============================================================
+    // ROUTE NOT FOUND
+    // ============================================================
 
     return json(
       {
