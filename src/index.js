@@ -1,5 +1,6 @@
 import { generateResponse } from "./model.js";
 import { buildSystemPrompt } from "./prompts.js";
+import { isAuthorized } from "./auth.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,16 +13,6 @@ function json(data, status = 200) {
     status,
     headers: corsHeaders
   });
-}
-
-function isAuthorized(request, env) {
-  const authorization = request.headers.get("Authorization");
-
-  if (!authorization) {
-    return false;
-  }
-
-  return authorization === `Bearer ${env.BERTHO_AI_SECRET}`;
 }
 
 export default {
