@@ -196,11 +196,17 @@ export default {
         // AI
         // --------------------------------------------------------
 
-        const result =
-          await generateResponse(
-            env,
-            messages
-          );
+       const requestedModel =
+  context.model ||
+  body.model ||
+  "turbo";
+
+const result =
+  await generateResponse(
+    env,
+    messages,
+    requestedModel
+  );
 
         // --------------------------------------------------------
         // RESPONSE
