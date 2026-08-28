@@ -18,7 +18,8 @@ const AI_MODELS = {
 };
 
 /**
- * Convertit une image Base64 en tableau d'octets pour Cloudflare Workers AI
+ * Convertit une image Base64 en tableau d'octets optimisé pour Cloudflare Workers AI
+ * Utilise Array.from() pour éviter les dépassements de pile sur les gros fichiers.
  */
 function base64ToByteArray(base64String) {
   try {
@@ -28,7 +29,7 @@ function base64ToByteArray(base64String) {
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return [...bytes];
+    return Array.from(bytes);
   } catch (e) {
     console.error('[Vision Error] Échec conversion base64 en bytes:', e);
     return null;
@@ -36,24 +37,31 @@ function base64ToByteArray(base64String) {
 }
 
 export async function generateResponse(env, messages, modelKey = 'turbo', rawImageBase64 = null) {
-  // 1. SI UNE IMAGE EST PRÉSENTE -> BASCULE AUTOMATIQUE SUR LE MODÈLE VISION
+  // 1. SI UNE IMAGE EST FOURNIE -> APPEL DU MODÈLE VISION MULTI-MODAL
   if (rawImageBase64) {
     const imageBytes = base64ToByteArray(rawImageBase64);
     if (imageBytes) {
+      // Normalisation des messages / injection d'un prompt par défaut si vide
+      const formattedMessages = Array.isArray(messages) && messages.length > 0 ?
+        messages :
+        [{ role: "user", content: "Décris et analyse cette image." }];
+      
       try {
-        const result = await env.AI.run(AI_MODELS.vision, {
-          messages,
+        const visionResult = await env.AI.run(AI_MODELS.vision, {
+          messages: formattedMessages,
           image: imageBytes,
           max_tokens: 2048
         });
-        return result;
+        
+        if (visionResult) return visionResult;
       } catch (visionError) {
         console.error('[AI Vision Engine Error]:', visionError);
+        // En cas d'échec vision, l'exécution se poursuit vers l'inférence texte standard
       }
     }
   }
   
-  // 2. MODÈLES TEXTE STANDARDS (TURBO / NEURAL / GAMING)
+  // 2. MODÈLES TEXTE STANDARDS (TURBO / NEURAL / GAMING) AVEC FALLBACK
   const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
   
   try {
@@ -67,10 +75,12 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
   } catch (error) {
     console.warn(`[AI Engine] Erreur sur ${targetModel}, repli automatique sur Turbo :`, error);
     
+    // Repli automatique vers Turbo si le modèle en échec était Neural ou Gaming
     if (targetModel !== AI_MODELS.turbo) {
       return await env.AI.run(AI_MODELS.turbo, {
         messages,
-        max_tokens: 4096
+        max_tokens: 4096,
+        temperature: 0.7
       });
     }
     
