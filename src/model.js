@@ -1,50 +1,59 @@
 /**
  * bertho-ai/src/model.js
- * Moteur d'inférence multi-modèles (Texte 70B, Raisonnement R1 & Vision Multimodale Llama 3.2).
+ * Moteur d'inférence multi-modèles (Texte 70B & Vision Multi-modale Llama 3.2).
  */
 
 const AI_MODELS = {
-  // ⚡ BERTHO AI TURBO : Llama 3.3 70B ultra-rapide (Texte)
+  // ⚡ BERTHO AI TURBO (Défaut texte) : Llama 3.3 70B ultra-rapide
   turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   
-  // 🧠 BERTHO AI NEURAL : Raisonnement profond (DeepSeek-R1)
+  // 🧠 BERTHO AI NEURAL : Raisonnement profond DeepSeek-R1
   neural: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
   
-  // 🎮 BERTHO AI GAMING : Modèle 70B expert des jeux
+  // 🎮 BERTHO AI GAMING : Modèle 70B pour le coaching
   gaming: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   
-  // 👁️ BERTHO AI VISION : Modèle Multimodal avec compréhension d'images
+  // 👁️ BERTHO AI VISION : Modèle officiel Cloudflare pour lire les images & captures
   vision: "@cf/meta/llama-3.2-11b-vision-instruct"
 };
 
-export async function generateResponse(env, messages, modelKey = 'turbo', imageBase64 = null) {
-  // Si une image est présente, bascule automatique sur le modèle Vision
-  if (imageBase64) {
-    try {
-      // Extraction des octets base64 pour le modèle Vision Cloudflare
-      const base64Data = imageBase64.includes('base64,') ? imageBase64.split('base64,')[1] : imageBase64;
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+/**
+ * Convertit une image Base64 en tableau d'octets pour Cloudflare Workers AI
+ */
+function base64ToByteArray(base64String) {
+  try {
+    const cleanBase64 = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
+    const binary = atob(cleanBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return [...bytes];
+  } catch (e) {
+    console.error('[Vision Error] Échec conversion base64 en bytes:', e);
+    return null;
+  }
+}
+
+export async function generateResponse(env, messages, modelKey = 'turbo', rawImageBase64 = null) {
+  // 1. SI UNE IMAGE EST PRÉSENTE -> BASCULE AUTOMATIQUE SUR LE MODÈLE VISION
+  if (rawImageBase64) {
+    const imageBytes = base64ToByteArray(rawImageBase64);
+    if (imageBytes) {
+      try {
+        const result = await env.AI.run(AI_MODELS.vision, {
+          messages,
+          image: imageBytes,
+          max_tokens: 2048
+        });
+        return result;
+      } catch (visionError) {
+        console.error('[AI Vision Engine Error]:', visionError);
       }
-      const imageArray = [...bytes];
-      
-      const lastUserMsg = messages[messages.length - 1]?.content || "Analyse cette image.";
-      
-      const visionResult = await env.AI.run(AI_MODELS.vision, {
-        prompt: lastUserMsg,
-        image: imageArray,
-        max_tokens: 1500
-      });
-      
-      return visionResult;
-    } catch (visionErr) {
-      console.warn('[AI Vision Warning]:', visionErr);
     }
   }
   
-  // Modèle Texte standard
+  // 2. MODÈLES TEXTE STANDARDS (TURBO / NEURAL / GAMING)
   const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
   
   try {
@@ -56,7 +65,7 @@ export async function generateResponse(env, messages, modelKey = 'turbo', imageB
     
     return result;
   } catch (error) {
-    console.warn(`[AI Engine] Erreur sur ${targetModel}, repli sur Turbo 70B :`, error);
+    console.warn(`[AI Engine] Erreur sur ${targetModel}, repli automatique sur Turbo :`, error);
     
     if (targetModel !== AI_MODELS.turbo) {
       return await env.AI.run(AI_MODELS.turbo, {
