@@ -1,3 +1,8 @@
+/**
+ * bertho-ai/src/index.js
+ * Point d'entrée officiel du Worker Bertho AI (Liaison Audit, Modèles Dynamiques & Contexte).
+ */
+
 import { generateResponse } from "./model.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { isAuthorized } from "./auth.js";
@@ -79,7 +84,7 @@ export default {
             content:
               "Réponds simplement : Bertho AI est opérationnelle."
           }
-        ]);
+        ], "turbo");
 
         return json({
           success: true,
@@ -151,17 +156,46 @@ export default {
             : [];
 
         // --------------------------------------------------------
-        // SYSTEM PROMPT
+        // DÉTECTION ET APPEL AUTOMATIQUE DE L'AUDIT DE SITE WEB
+        // --------------------------------------------------------
+
+        let auditDataText = "";
+        const urlMatch = body.message.match(/https?:\/\/[^\s]+/i);
+
+        if (urlMatch && env.BERTHO_AI_AUDIT) {
+          try {
+            const targetUrl = urlMatch[0];
+            const auditReq = new Request("https://bertho-ai-audit.internal/audit", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.BERTHO_AI_SECRET}`
+              },
+              body: JSON.stringify({ url: targetUrl })
+            });
+
+            const auditRes = await env.BERTHO_AI_AUDIT.fetch(auditReq);
+            if (auditRes.ok) {
+              const rawAudit = await auditRes.json();
+              if (rawAudit && rawAudit.content) {
+                // Injection des données HTML réelles du site pour le modèle
+                auditDataText = `\n\n[DONNÉES BRUTES RÉELLES DU SITE AUDITÉ (${targetUrl})]\n${rawAudit.content.substring(0, 12000)}\n[FIN DES DONNÉES DU SITE]`;
+              }
+            }
+          } catch (e) {
+            console.warn('[Audit Bridge Warning]:', e);
+          }
+        }
+
+        // --------------------------------------------------------
+        // SYSTEM PROMPT & INSTRUCTIONS
         // --------------------------------------------------------
 
         const systemPrompt =
           buildSystemPrompt(
-            context.product
+            context.product,
+            context
           );
-
-        // --------------------------------------------------------
-        // CONTEXT INSTRUCTIONS
-        // --------------------------------------------------------
 
         const contextInstructions =
           buildContextInstructions(
@@ -187,26 +221,27 @@ export default {
           {
             role: "user",
             content:
-              body.message
+              body.message + auditDataText
           }
 
         ];
 
         // --------------------------------------------------------
-        // AI
+        // ROUTAGE DYNAMIQUE DU MODÈLE (TURBO / NEURAL / GAMING)
         // --------------------------------------------------------
 
-       const requestedModel =
-  context.model ||
-  body.model ||
-  "turbo";
+        const requestedModel =
+          context.model ||
+          body.model ||
+          (body.context && body.context.model) ||
+          "turbo";
 
-const result =
-  await generateResponse(
-    env,
-    messages,
-    requestedModel
-  );
+        const result =
+          await generateResponse(
+            env,
+            messages,
+            requestedModel
+          );
 
         // --------------------------------------------------------
         // RESPONSE
