@@ -4,3 +4,7 @@ compatibility_date = "2026-08-20"
 
 [ai]
 binding = "AI"
+
+[[services]]
+binding = "BERTHO_AI_AUDIT"
+service = "bertho-ai-audit"
