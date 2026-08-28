@@ -77,23 +77,28 @@ export default {
       try {
         const body = await request.json();
         
-        // A. Validation du message
+        // A. Validation du message utilisateur
         if (!body.message || typeof body.message !== "string" || !body.message.trim()) {
           return json({ success: false, error: "message_required" }, 400);
         }
         
-        // B. Construction du contexte complet (avec image)
+        // B. Construction du contexte complet et résolution de l'image (source unique)
         const rawCtx = (body.context && typeof body.context === "object") ? body.context : {};
         const normalizedCtx = createContext(body);
+        
+        // Priorité : racine (body.image) > objet contexte (context.image)
+        const resolvedImage = (typeof body.image === "string" && body.image.trim()) ?
+          body.image.trim() :
+          (typeof rawCtx.image === "string" && rawCtx.image.trim() ? rawCtx.image.trim() : null);
         
         const fullContext = {
           ...rawCtx,
           ...normalizedCtx,
-          model: rawCtx.model || body.model || "turbo",
-          user: rawCtx.user || body.user || null,
+          model: body.model || rawCtx.model || "turbo",
+          user: body.user || rawCtx.user || null,
           screenDetails: rawCtx.screenDetails || null,
-          triggerSource: rawCtx.source || rawCtx.triggerSource || body.source || "berthoplay",
-          image: rawCtx.image || body.image || null
+          triggerSource: body.source || rawCtx.source || rawCtx.triggerSource || "berthoplay",
+          image: resolvedImage
         };
         
         // C. Assainissement de l'historique multi-tours
@@ -128,16 +133,15 @@ export default {
           }
         ];
         
-        // G. Routage et inférence (avec transmission de l'image)
-        const requestedModel = fullContext.model || "turbo";
+        // G. Routage et inférence (texte standard ou vision automatique)
         const result = await generateResponse(
           env,
           messages,
-          requestedModel,
+          fullContext.model,
           fullContext.image
         );
         
-        // H. Extraction et retour de la réponse
+        // H. Extraction et mise en forme de la réponse
         const responseText = (result && typeof result.response === 'string') ?
           result.response :
           (typeof result === 'string' ? result : JSON.stringify(result));
