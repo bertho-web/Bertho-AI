@@ -1,6 +1,6 @@
 /**
  * bertho-ai/src/index.js
- * Point d'entrée officiel du Worker Bertho AI (Zéro Perte de Contexte & Actions).
+ * Point d'entrée officiel du Worker Bertho AI (Vision, Liaison Audit, Modèles Dynamiques & Contexte).
  */
 
 import { generateResponse } from "./model.js";
@@ -71,7 +71,7 @@ export default {
     }
     
     // ============================================================
-    // 5. CHAT & AGENT D'ACTION (POST /chat)
+    // 5. CHAT, VISION & AGENT D'ACTION (POST /chat)
     // ============================================================
     if (request.method === "POST" && url.pathname === "/chat") {
       try {
@@ -82,7 +82,7 @@ export default {
           return json({ success: false, error: "message_required" }, 400);
         }
         
-        // B. Construction du contexte complet (Normalisé + Préservation des métadonnées)
+        // B. Construction du contexte complet (avec image)
         const rawCtx = (body.context && typeof body.context === "object") ? body.context : {};
         const normalizedCtx = createContext(body);
         
@@ -92,7 +92,8 @@ export default {
           model: rawCtx.model || body.model || "turbo",
           user: rawCtx.user || body.user || null,
           screenDetails: rawCtx.screenDetails || null,
-          triggerSource: rawCtx.source || rawCtx.triggerSource || body.source || "berthoplay"
+          triggerSource: rawCtx.source || rawCtx.triggerSource || body.source || "berthoplay",
+          image: rawCtx.image || body.image || null
         };
         
         // C. Assainissement de l'historique multi-tours
@@ -100,7 +101,7 @@ export default {
           body.history.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') :
           [];
         
-        // D. Exécution modulaire des outils (Audit de site, etc.)
+        // D. Exécution modulaire des outils (Audit de site web)
         let toolDataPayload = "";
         if (BerthoAIActions.isAuditIntent(body.message)) {
           const targetUrl = BerthoAIActions.extractTargetUrl(body.message);
@@ -114,7 +115,7 @@ export default {
         const systemPrompt = buildSystemPrompt(fullContext.product, fullContext);
         const contextInstructions = buildContextInstructions(fullContext);
         
-        // F. Assemblage des messages dans l'ordre strict
+        // F. Assemblage des messages
         const messages = [
           {
             role: "system",
@@ -127,11 +128,13 @@ export default {
           }
         ];
         
-        // G. Inférence GPU (Llama 3.3 70B Turbo / DeepSeek-R1 Neural / Gaming)
+        // G. Routage et inférence (avec transmission de l'image)
+        const requestedModel = fullContext.model || "turbo";
         const result = await generateResponse(
           env,
           messages,
-          fullContext.model
+          requestedModel,
+          fullContext.image
         );
         
         // H. Extraction et retour de la réponse
