@@ -10,6 +10,14 @@ const AI_MODELS = {
   vision: "@cf/meta/llama-3.2-11b-vision-instruct"
 };
 
+// 🟢 CONFIGURATION DE LA PASSERELLE CLOUDFLARE (Observabilité & Résilience)
+const GATEWAY_OPTIONS = {
+  gateway: {
+    id: "bertho-gateway",
+    skipCache: true // Maintient des réponses vivantes et dynamiques
+  }
+};
+
 function base64ToByteArray(base64String) {
   try {
     // Regex universelle insensible à la casse pour tous types MIME
@@ -49,11 +57,15 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
         userPrompt;
       
       try {
-        const visionResult = await env.AI.run(AI_MODELS.vision, {
-          prompt: String(combinedPrompt),
-          image: imageBytes,
-          max_tokens: 2048
-        });
+        const visionResult = await env.AI.run(
+          AI_MODELS.vision,
+          {
+            prompt: String(combinedPrompt),
+            image: imageBytes,
+            max_tokens: 2048
+          },
+          GATEWAY_OPTIONS // 👈 Liaison Passerelle
+        );
         
         if (visionResult) return visionResult;
       } catch (visionError) {
@@ -62,12 +74,16 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
         // Accord de licence automatique Meta si requis
         if (String(visionError).includes('agree') || String(visionError).includes('license')) {
           try {
-            await env.AI.run(AI_MODELS.vision, { prompt: "agree" });
-            return await env.AI.run(AI_MODELS.vision, {
-              prompt: String(combinedPrompt),
-              image: imageBytes,
-              max_tokens: 2048
-            });
+            await env.AI.run(AI_MODELS.vision, { prompt: "agree" }, GATEWAY_OPTIONS);
+            return await env.AI.run(
+              AI_MODELS.vision,
+              {
+                prompt: String(combinedPrompt),
+                image: imageBytes,
+                max_tokens: 2048
+              },
+              GATEWAY_OPTIONS // 👈 Liaison Passerelle
+            );
           } catch (e) {
             console.error('[AI Vision Agreement Error]:', e);
           }
@@ -80,22 +96,30 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
   const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
   
   try {
-    const result = await env.AI.run(targetModel, {
-      messages,
-      max_tokens: 4096,
-      temperature: modelKey === 'neural' ? 0.6 : 0.7
-    });
+    const result = await env.AI.run(
+      targetModel,
+      {
+        messages,
+        max_tokens: 4096,
+        temperature: modelKey === 'neural' ? 0.6 : 0.7
+      },
+      GATEWAY_OPTIONS // 👈 Liaison Passerelle
+    );
     
     return result;
   } catch (error) {
     console.warn(`[AI Engine] Erreur sur ${targetModel}, repli sur Turbo :`, error);
     
     if (targetModel !== AI_MODELS.turbo) {
-      return await env.AI.run(AI_MODELS.turbo, {
-        messages,
-        max_tokens: 4096,
-        temperature: 0.7
-      });
+      return await env.AI.run(
+        AI_MODELS.turbo,
+        {
+          messages,
+          max_tokens: 4096,
+          temperature: 0.7
+        },
+        GATEWAY_OPTIONS // 👈 Liaison Passerelle
+      );
     }
     
     throw error;
