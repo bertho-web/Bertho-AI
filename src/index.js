@@ -143,16 +143,19 @@ const messages = [
           fullContext.image
         );
         
-        // H. Extraction et mise en forme de la réponse
-        const responseText = (result && typeof result.response === 'string') ?
-          result.response :
-          (typeof result === 'string' ? result : JSON.stringify(result));
-        
-        return json({
-          success: true,
-          message: responseText,
-          context: fullContext
-        });
+// H. Extraction et mise en forme de la réponse (Nettoyage de <think> DeepSeek-R1)
+let responseText = (result && typeof result.response === 'string') ?
+  result.response :
+  (typeof result === 'string' ? result : JSON.stringify(result));
+
+// Supprime le bloc de raisonnement interne pour livrer une réponse directe et propre
+responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+return json({
+  success: true,
+  message: responseText,
+  context: fullContext
+});
         
       } catch (error) {
         console.error("AI REQUEST ERROR:", error);
