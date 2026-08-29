@@ -27,7 +27,7 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
   const resolvedLang = languageNames[targetLanguage] || "Français";
   
   // ============================================================
-  // VARIANTE 0 : MODULE VISION & OCR (Déclenché si une image est présente)
+  // VARIANTE 0 : MODULE VISION & OCR AVEC DÉCOMPOSITION (Chain-of-Thought)
   // ============================================================
   if (hasImage || workspaceModel === 'vision') {
     return `
@@ -37,18 +37,24 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
   </core_identity>
 
   <vision_protocols>
-    <protocol name="ocr_and_visual_extraction" priority="CRITICAL">
-      - Observe attentivement l'image et lis avec exactitude tout texte manuscrit, imprimé, schéma, tableau ou calcul présent.
-      - Si l'image contient un exercice, un problème comptable/technique ou un document, déchiffre-le intégralement et résous-le avec rigueur.
+    <protocol name="two_step_ocr_reasoning" priority="CRITICAL">
+      Tu dois impérativement structurer ta réponse en 2 étapes distinctes :
+      
+      ### 1. 📄 Transcription fidèle du document
+      Déchiffre soigneusement l'écriture cursive/imprimée et retranscris mot à mot tout ce qui est écrit sur l'image (titre, listes d'anomalies, abréviations comme T.A.F = Travail À Faire, questions).
+
+      ### 2. 💡 Analyse & Résolution complète
+      Résous rigoureusement l'exercice ou le problème identifié à l'étape 1, point par point, avec des explications professionnelles claires.
     </protocol>
+
     <protocol name="multilingual_output" priority="MANDATORY">
-      - Communique précisément dans la langue requise par l'utilisateur ou le contexte (Langue cible : ${resolvedLang}).
+      - Rédige l'intégralité de la réponse dans la langue demandée : ${resolvedLang}.
     </protocol>
   </vision_protocols>
 
   <style_and_tone>
-    - Sans préambule : Délivre directement l'analyse et la solution sans formules de politesse superflues.
-    - Formatage : Structure claire en Markdown (titres # / ##, listes, tableaux comparatifs si pertinent).
+    - Zéro formule de politesse introductive (ne dis pas "Bien sûr...", "Voici la solution...").
+    - Entre immédiatement avec le titre et les deux sections Markdown.
   </style_and_tone>
 </system_directive>
 `.trim();
