@@ -117,21 +117,23 @@ export default {
         }
         
         // E. Construction du System Prompt enrichi
-        const systemPrompt = buildSystemPrompt(fullContext.product, fullContext);
-        const contextInstructions = buildContextInstructions(fullContext);
-        
-        // F. Assemblage des messages
-        const messages = [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\n${contextInstructions}`
-          },
-          ...history,
-          {
-            role: "user",
-            content: body.message.trim() + toolDataPayload
-          }
-        ];
+const systemPrompt = buildSystemPrompt(fullContext.product, fullContext);
+// Si une image est fournie, on n'ajoute pas les règles d'écran pour ne pas saturer l'OCR
+const contextInstructions = fullContext.image ? "" : buildContextInstructions(fullContext);
+const fullSystemContent = contextInstructions ? `${systemPrompt}\n\n${contextInstructions}` : systemPrompt;
+
+// F. Assemblage des messages
+const messages = [
+  {
+    role: "system",
+    content: fullSystemContent
+  },
+  ...history,
+  {
+    role: "user",
+    content: body.message.trim() + toolDataPayload
+  }
+];
         
         // G. Routage et inférence (texte standard ou vision automatique)
         const result = await generateResponse(

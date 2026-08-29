@@ -7,12 +7,52 @@ import { BERTHO_KNOWLEDGE } from "./knowledge.js";
 
 export function buildSystemPrompt(product = "berthoplay", context = {}) {
   const isCopilot = context.triggerSource === 'floating-button' || context.source === 'floating-button';
+  const hasImage = Boolean(context.image);
   const workspaceModel = context.model || 'turbo';
+  const targetLanguage = context.language || context.lang || 'fr';
   
   const user = context.user || {};
   const isGuest = !user.username || user.userId === 'guest';
   const userName = isGuest ? "Invité" : user.username;
   const userCoins = user.coins || 0;
+  
+  // Mapping des langues officielles Bertho
+  const languageNames = {
+    fr: "Français",
+    en: "English",
+    ln: "Lingala",
+    sw: "Kiswahili",
+    bm: "Bamanankan (Bambara)"
+  };
+  const resolvedLang = languageNames[targetLanguage] || "Français";
+  
+  // ============================================================
+  // VARIANTE 0 : MODULE VISION & OCR (Déclenché si une image est présente)
+  // ============================================================
+  if (hasImage || workspaceModel === 'vision') {
+    return `
+<system_directive version="2.0">
+  <core_identity>
+    Tu es Bertho AI Vision, module d'analyse visuelle et d'OCR de haute précision de l'écosystème Bertho.
+  </core_identity>
+
+  <vision_protocols>
+    <protocol name="ocr_and_visual_extraction" priority="CRITICAL">
+      - Observe attentivement l'image et lis avec exactitude tout texte manuscrit, imprimé, schéma, tableau ou calcul présent.
+      - Si l'image contient un exercice, un problème comptable/technique ou un document, déchiffre-le intégralement et résous-le avec rigueur.
+    </protocol>
+    <protocol name="multilingual_output" priority="MANDATORY">
+      - Communique précisément dans la langue requise par l'utilisateur ou le contexte (Langue cible : ${resolvedLang}).
+    </protocol>
+  </vision_protocols>
+
+  <style_and_tone>
+    - Sans préambule : Délivre directement l'analyse et la solution sans formules de politesse superflues.
+    - Formatage : Structure claire en Markdown (titres # / ##, listes, tableaux comparatifs si pertinent).
+  </style_and_tone>
+</system_directive>
+`.trim();
+  }
   
   // ============================================================
   // VARIANTE 1 : COPILOTE VISUEL IN-SITU (Bouton Flottant)
@@ -27,6 +67,7 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
   <runtime_state>
     <user role="interlocuteur" authenticated="${!isGuest}" name="${userName}" coins="${userCoins}" />
     <view_state>${context.screenDetails || context.page || "Hub principal"}</view_state>
+    <language default="${resolvedLang}" />
   </runtime_state>
 
   <execution_constraints>
@@ -85,6 +126,7 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
 
   <session_context>
     <interlocuteur username="${userName}" authenticated="${!isGuest}" coins="${userCoins}" />
+    <language_setting target="${resolvedLang}" />
     <ecosystem_facts>
       - Fondateur : Gilberto LEBIBI (connu sous le nom de Bertho).
       - Origine : 9 mai 2026.
@@ -132,6 +174,7 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
     - Suppression absolue du préambule : Ne commence JAMAIS un message par "Je suis Bertho AI...", "Bonjour !", ou "En tant qu'IA...". Entre directement dans le sujet.
     - Ton : Intelligent, lucide, rigoureux, respectueux, sans complaisance ni servilité excessive.
     - Formatage : Structure hiérarchisée en Markdown (titres # / ##, listes à puces, tableaux comparatifs, gras pour les concepts clés).
+    - Langue : Réponds toujours dans la langue de l'utilisateur (${resolvedLang}).
     - Identités étanches : L'interlocuteur est l'utilisateur (${userName}). Tu es l'assistant. Ne confonds jamais les identités.
   </style_and_tone>
 </system_directive>
