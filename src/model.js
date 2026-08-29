@@ -4,26 +4,16 @@
  */
 
 const AI_MODELS = {
-  // ⚡ BERTHO AI TURBO (Défaut texte) : Llama 3.3 70B ultra-rapide
   turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  
-  // 🧠 BERTHO AI NEURAL : Raisonnement profond DeepSeek-R1
   neural: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-  
-  // 🎮 BERTHO AI GAMING : Modèle 70B pour le coaching
   gaming: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  
-  // 👁️ BERTHO AI VISION : Modèle officiel Cloudflare pour lire les images & captures
   vision: "@cf/meta/llama-3.2-11b-vision-instruct"
 };
 
-/**
- * Convertit une image Base64 en tableau d'octets optimisé pour Cloudflare Workers AI
- * Utilise Array.from() pour éviter les dépassements de pile sur les gros fichiers.
- */
 function base64ToByteArray(base64String) {
   try {
-    const cleanBase64 = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
+    // Regex universelle insensible à la casse pour tous types MIME
+    const cleanBase64 = base64String.replace(/^data:[^;]+;base64,/i, '');
     const binary = atob(cleanBase64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
@@ -40,28 +30,53 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
   // 1. SI UNE IMAGE EST FOURNIE -> APPEL DU MODÈLE VISION MULTI-MODAL
   if (rawImageBase64) {
     const imageBytes = base64ToByteArray(rawImageBase64);
-    if (imageBytes) {
-      // Normalisation des messages / injection d'un prompt par défaut si vide
-      const formattedMessages = Array.isArray(messages) && messages.length > 0 ?
-        messages :
-        [{ role: "user", content: "Décris et analyse cette image." }];
+    if (imageBytes && imageBytes.length > 0) {
+      
+      // Extraction et combinaison System Prompt + User Prompt
+      let systemPrompt = "";
+      let userPrompt = "Analyse et décris cette image en détail.";
+      
+      if (Array.isArray(messages)) {
+        const sysMsg = messages.find(m => m.role === 'system');
+        const lastUser = messages.filter(m => m.role === 'user').pop();
+        
+        if (sysMsg && sysMsg.content) systemPrompt = sysMsg.content;
+        if (lastUser && lastUser.content) userPrompt = lastUser.content;
+      }
+      
+      const combinedPrompt = systemPrompt ?
+        `${systemPrompt}\n\nInstruction utilisateur : ${userPrompt}` :
+        userPrompt;
       
       try {
         const visionResult = await env.AI.run(AI_MODELS.vision, {
-          messages: formattedMessages,
+          prompt: String(combinedPrompt),
           image: imageBytes,
           max_tokens: 2048
         });
         
         if (visionResult) return visionResult;
       } catch (visionError) {
-        console.error('[AI Vision Engine Error]:', visionError);
-        // En cas d'échec vision, l'exécution se poursuit vers l'inférence texte standard
+        console.warn('[AI Vision Engine Warning]:', visionError);
+        
+        // Accord de licence automatique Meta si requis
+        if (String(visionError).includes('agree') || String(visionError).includes('license')) {
+          try {
+            await env.AI.run(AI_MODELS.vision, { prompt: "agree" });
+            return await env.AI.run(AI_MODELS.vision, {
+              prompt: String(combinedPrompt),
+              image: imageBytes,
+              max_tokens: 2048
+            });
+          } catch (e) {
+            console.error('[AI Vision Agreement Error]:', e);
+          }
+        }
       }
     }
   }
   
-  // 2. MODÈLES TEXTE STANDARDS (TURBO / NEURAL / GAMING) AVEC FALLBACK
+  // 2. MODÈLES TEXTE STANDARDS (TURBO 70B / NEURAL / GAMING) AVEC FALLBACK
   const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
   
   try {
@@ -73,9 +88,8 @@ export async function generateResponse(env, messages, modelKey = 'turbo', rawIma
     
     return result;
   } catch (error) {
-    console.warn(`[AI Engine] Erreur sur ${targetModel}, repli automatique sur Turbo :`, error);
+    console.warn(`[AI Engine] Erreur sur ${targetModel}, repli sur Turbo :`, error);
     
-    // Repli automatique vers Turbo si le modèle en échec était Neural ou Gaming
     if (targetModel !== AI_MODELS.turbo) {
       return await env.AI.run(AI_MODELS.turbo, {
         messages,
