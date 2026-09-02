@@ -170,15 +170,54 @@ if (request.method === "POST" && url.pathname === "/sandbox") {
           body.history.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') :
           [];
         
-        // D. Exécution modulaire des outils (Audit de site web)
-        let toolDataPayload = "";
-        if (BerthoAIActions.isAuditIntent(body.message)) {
-          const targetUrl = BerthoAIActions.extractTargetUrl(body.message);
-          if (targetUrl) {
-            const auditResult = await BerthoAIActions.runWebsiteAudit(targetUrl, env);
-            toolDataPayload = BerthoAIActions.buildAuditInstructionPayload(auditResult);
-          }
-        }
+// D1. Exécution modulaire des outils (Audit de site web)
+let toolDataPayload = "";
+if (BerthoAIActions.isAuditIntent(body.message)) {
+  const targetUrl = BerthoAIActions.extractTargetUrl(body.message);
+  if (targetUrl) {
+    const auditResult = await BerthoAIActions.runWebsiteAudit(targetUrl, env);
+    toolDataPayload = BerthoAIActions.buildAuditInstructionPayload(auditResult);
+  }
+}
+
+// D2. Interception automatique de génération d'image FLUX.1
+const msgClean = body.message.toLowerCase().trim();
+const isImageIntent = (
+  msgClean.startsWith("génère une image") ||
+  msgClean.startsWith("genere une image") ||
+  msgClean.startsWith("crée une image") ||
+  msgClean.startsWith("cree une image") ||
+  msgClean.startsWith("dessine") ||
+  msgClean.startsWith("fais une image") ||
+  msgClean.startsWith("generate image") ||
+  msgClean.startsWith("draw")
+);
+
+if (isImageIntent) {
+  const imagePrompt = body.message
+    .replace(/^(génère une image de|genere une image de|crée une image de|cree une image de|dessine-moi|dessine|génère une image|genere une image|crée une image|cree une image|generate image of|generate image|draw)/i, '')
+    .trim() || body.message.trim();
+  
+  const requestedSteps = Math.min(Math.max(parseInt(body.steps, 10) || 4, 1), 8);
+  
+  const imgResponse = await env.BERTHO_IMAGE_AI.fetch(new Request("https://bertho-ai-image.internal/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: imagePrompt, steps: requestedSteps })
+  }));
+  
+  const imgData = await imgResponse.json();
+  
+  if (imgData.success && imgData.image) {
+    return json({
+      success: true,
+      message: "Voici votre création graphique haute définition :",
+      generatedImage: imgData.image,
+      steps: requestedSteps,
+      context: fullContext
+    });
+  }
+}
         
         // E. Construction du System Prompt enrichi
 const systemPrompt = buildSystemPrompt(fullContext.product, fullContext);
