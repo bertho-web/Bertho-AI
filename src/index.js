@@ -180,18 +180,43 @@ if (BerthoAIActions.isAuditIntent(body.message)) {
   }
 }
 
-// D2. Interception automatique de génération d'image FLUX.1
+// D2. Interception universelle de génération graphique FLUX.1 (Affiches, Logos, Flyers, Visuels)
 const msgClean = body.message.toLowerCase().trim();
-const isImageIntent = (
-  msgClean.startsWith("génère une image") ||
-  msgClean.startsWith("genere une image") ||
-  msgClean.startsWith("crée une image") ||
-  msgClean.startsWith("cree une image") ||
-  msgClean.startsWith("dessine") ||
-  msgClean.startsWith("fais une image") ||
-  msgClean.startsWith("generate image") ||
-  msgClean.startsWith("draw")
-);
+
+const imageKeywords = ["image", "affiche", "poster", "flyer", "logo", "bannière", "banniere", "visuel", "illustration", "mockup", "mock-up", "fond d'écran", "dessin", "caricature", "portrait"];
+const actionVerbs = ["génère", "genere", "crée", "cree", "fais", "dessine", "conçois", "concois", "illustre", "fabrique", "produis", "generate", "create", "draw", "make", "design"];
+
+const hasImageKeyword = imageKeywords.some(k => msgClean.includes(k));
+const hasActionVerb = actionVerbs.some(v => msgClean.includes(v));
+
+const isImageIntent = (hasImageKeyword && hasActionVerb) || msgClean.startsWith("dessine") || body.type === "image";
+
+if (isImageIntent) {
+  // Extraction du prompt épuré sans les verbes d'introduction
+  const imagePrompt = body.message
+    .replace(/^(génère-moi|genere-moi|crée-moi|cree-moi|fais-moi|dessine-moi|conçois-moi|génère une image de|genere une image de|crée une image de|cree une image de|génère une affiche pour|genere une affiche pour|crée une affiche pour|cree une affiche pour|génère un flyer pour|crée un logo pour|génère|genere|crée|cree|fais|dessine|conçois|generate image of|create image of|generate an image|draw)/i, '')
+    .trim() || body.message.trim();
+  
+  const requestedSteps = Math.min(Math.max(parseInt(body.steps, 10) || 4, 1), 8);
+  
+  const imgResponse = await env.BERTHO_IMAGE_AI.fetch(new Request("https://bertho-ai-image.internal/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: imagePrompt, steps: requestedSteps })
+  }));
+  
+  const imgData = await imgResponse.json();
+  
+  if (imgData.success && imgData.image) {
+    return json({
+      success: true,
+      message: "Voici votre création graphique haute définition :",
+      generatedImage: imgData.image,
+      steps: requestedSteps,
+      context: fullContext
+    });
+  }
+}
 
 if (isImageIntent) {
   const imagePrompt = body.message
