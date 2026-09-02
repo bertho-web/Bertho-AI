@@ -69,7 +69,71 @@ export default {
         return json({ success: false, error: error.message || String(error) }, 500);
       }
     }
+// A. ROUTE DIRECTE : GÉNÉRATION D'IMAGES FLUX.1 (POST /image)
+if (request.method === "POST" && url.pathname === "/image") {
+  try {
+    const body = await request.json();
+    const prompt = body.prompt || body.message;
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return json({ success: false, error: "prompt_required" }, 400);
+    }
     
+    const imageResponse = await env.BERTHO_IMAGE_AI.fetch(new Request("https://bertho-ai-image.internal/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: prompt.trim(), steps: body.steps || 4 })
+    }));
+    
+    const data = await imageResponse.json();
+    return json(data, imageResponse.status);
+  } catch (e) {
+    return json({ success: false, error: e.message || "image_service_error" }, 500);
+  }
+}
+
+// B. ROUTE DIRECTE : RECHERCHE WEB EN TEMPS RÉEL (POST /search)
+if (request.method === "POST" && url.pathname === "/search") {
+  try {
+    const body = await request.json();
+    const query = body.query || body.message;
+    if (!query || typeof query !== "string" || !query.trim()) {
+      return json({ success: false, error: "query_required" }, 400);
+    }
+    
+    const searchResponse = await env.BERTHO_SEARCH_AI.fetch(new Request("https://bertho-ai-search.internal/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: query.trim() })
+    }));
+    
+    const data = await searchResponse.json();
+    return json(data, searchResponse.status);
+  } catch (e) {
+    return json({ success: false, error: e.message || "search_service_error" }, 500);
+  }
+}
+
+// C. ROUTE DIRECTE : EXÉCUTION BAC À SABLE V8 (POST /sandbox)
+if (request.method === "POST" && url.pathname === "/sandbox") {
+  try {
+    const body = await request.json();
+    const code = body.code || body.script || body.message;
+    if (!code || typeof code !== "string" || !code.trim()) {
+      return json({ success: false, error: "code_required" }, 400);
+    }
+    
+    const sandboxResponse = await env.BERTHO_SANDBOX_AI.fetch(new Request("https://bertho-ai-sandbox.internal/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code.trim(), language: body.language || "javascript" })
+    }));
+    
+    const data = await sandboxResponse.json();
+    return json(data, sandboxResponse.status);
+  } catch (e) {
+    return json({ success: false, error: e.message || "sandbox_service_error" }, 500);
+  }
+}
     // ============================================================
     // 5. CHAT, VISION & AGENT D'ACTION (POST /chat)
     // ============================================================

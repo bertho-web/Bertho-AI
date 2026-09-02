@@ -8,3 +8,15 @@ binding = "AI"
 [[services]]
 binding = "BERTHO_AI_AUDIT"
 service = "bertho-ai-audit"
+
+[[services]]
+binding = "BERTHO_IMAGE_AI"
+service = "bertho-ai-image"
+
+[[services]]
+binding = "BERTHO_SEARCH_AI"
+service = "bertho-ai-search"
+
+[[services]]
+binding = "BERTHO_SANDBOX_AI"
+service = "bertho-ai-sandbox"
