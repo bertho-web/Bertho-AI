@@ -4,10 +4,16 @@
  */
 
 const AI_MODELS = {
-  turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+ turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   neural: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
   gaming: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  vision: "@cf/meta/llama-3.2-11b-vision-instruct"
+  vision: "@cf/meta/llama-3.2-11b-vision-instruct",
+  
+  // 2. Modèles de Frontière Nouvelle Génération
+  kimi: "@cf/moonshotai/kimi-k2.6",
+  glm: "@cf/zhipuai/glm-5.3-flash",
+  qwen: "@cf/qwen/qwen3.8-27b",
+  deepseek_v4: "@cf/deepseek-ai/deepseek-v4-pro-0813"
 };
 
 // 🟢 CONFIGURATION DE LA PASSERELLE CLOUDFLARE (Observabilité & Résilience)
