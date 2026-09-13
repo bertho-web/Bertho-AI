@@ -32,7 +32,7 @@ import {
   validateDecision,
   requiresTool
 } from "./orchestrator.js";
-
+import { getCapabilities } from "./capabilities.js";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -676,7 +676,7 @@ export default {
             context: fullContext
           });
 
-        decision =
+                decision =
           validateDecision(decision);
 
         console.log(
@@ -684,9 +684,12 @@ export default {
           JSON.stringify(decision)
         );
 
+        // NOUVEAU : On récupère les capacités réelles du serveur
+        const capabilities = getCapabilities(env);
+
         // --------------------------------------------------------
         // E. CLARIFICATION
-        // --------------------------------------------------------
+ --------------------------------------------------------
 
         if (
           decision.action ===
@@ -717,12 +720,21 @@ export default {
           // F1. IMAGE
           // ======================================================
 
-          if (
+                    if (
             decision.action ===
             "generate_image"
           ) {
+            // SÉCURITÉ AJOUTÉE
+            if (!capabilities.image_generation) {
+              return json({
+                success: false,
+                error: "La génération d'images est actuellement indisponible."
+              }, 503);
+            }
+
             const result =
               await executeImageAction(
+
                 env,
                 decision,
                 body,
@@ -759,12 +771,21 @@ export default {
           // F2. RECHERCHE WEB
           // ======================================================
 
-          if (
+                    if (
             decision.action ===
             "search_web"
           ) {
+            // SÉCURITÉ AJOUTÉE
+            if (!capabilities.web_search) {
+              return json({
+                success: false,
+                error: "La recherche web est actuellement indisponible."
+              }, 503);
+            }
+
             const result =
               await executeSearchAction(
+
                 env,
                 decision,
                 body,
@@ -861,12 +882,21 @@ export default {
           // F3. AUDIT SITE WEB
           // ======================================================
 
-          if (
+                    if (
             decision.action ===
             "website_audit"
           ) {
+            // SÉCURITÉ AJOUTÉE
+            if (!capabilities.website_audit) {
+              return json({
+                success: false,
+                error: "L'audit de site web est actuellement indisponible."
+              }, 503);
+            }
+
             const auditResult =
               await executeWebsiteAuditAction(
+
                 env,
                 decision,
                 body,
@@ -947,12 +977,21 @@ export default {
           // F4. SANDBOX
           // ======================================================
 
-          if (
+                    if (
             decision.action ===
             "sandbox"
           ) {
+            // SÉCURITÉ AJOUTÉE
+            if (!capabilities.sandbox) {
+              return json({
+                success: false,
+                error: "L'exécution sandbox est actuellement indisponible."
+              }, 503);
+            }
+
             const result =
               await executeSandboxAction(
+
                 env,
                 decision,
                 body,
