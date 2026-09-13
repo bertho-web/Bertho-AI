@@ -4,6 +4,7 @@
  */
 
 import { AI_MODELS } from "./model.js";
+import { getCapabilities } from "./capabilities.js";
 
 const VALID_ACTIONS = [
   "answer",
@@ -65,7 +66,7 @@ function normalizeDecision(decision = {}) {
   };
 }
 
-function buildDecisionPrompt(message, history, context) {
+function buildDecisionPrompt(message, history, context, capabilities) {
   const safeHistory = Array.isArray(history) ? history.slice(-12) : [];
   const historyText = safeHistory
     .map(item => {
