@@ -30,24 +30,38 @@ const GATEWAY_OPTIONS = {
  * Le modèle demandé reste toujours prioritaire.
  * Aucun modèle principal n'est remplacé.
  */
+/**
+ * Exécute un modèle avec une cascade de secours.
+ *
+ * Le modèle demandé reste toujours prioritaire.
+ * Les modèles principaux ne sont jamais remplacés.
+ *
+ * @param {object} env
+ * @param {string} modelKey - Clé du modèle dans AI_MODELS
+ * @param {object} input - Payload envoyé à Workers AI
+ * @param {object} options - Options supplémentaires pour env.AI.run()
+ */
 export async function runWithModelFallback(
   env,
   modelKey,
   input,
   options = {}
 ) {
-  const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
+  const targetModel = AI_MODELS[modelKey] || modelKey || AI_MODELS.turbo;
   
-  const fallbackKeys = [
-    "deepseek_r1",
-    "turbo"
-  ];
+  const fallbackModels = [
+    AI_MODELS.deepseek_r1,
+    AI_MODELS.turbo
+  ].filter(
+    (model, index, array) =>
+    model &&
+    model !== targetModel &&
+    array.indexOf(model) === index
+  );
   
   const modelsToTry = [
     targetModel,
-    ...fallbackKeys
-    .map(key => AI_MODELS[key])
-    .filter(model => model && model !== targetModel)
+    ...fallbackModels
   ];
   
   let lastError = null;
@@ -57,7 +71,7 @@ export async function runWithModelFallback(
     
     try {
       console.log(
-        `[AI Engine] Tentative modèle ${index + 1}/${modelsToTry.length}: ${model}`
+        `[AI Engine] Tentative ${index + 1}/${modelsToTry.length}: ${model}`
       );
       
       return await env.AI.run(
@@ -72,13 +86,15 @@ export async function runWithModelFallback(
       lastError = error;
       
       console.warn(
-        `[AI Engine] Échec modèle ${model}:`,
+        `[AI Engine] Échec du modèle ${model}:`,
         error?.message || String(error)
       );
     }
   }
   
-  throw lastError || new Error("Tous les modèles disponibles ont échoué.");
+  throw lastError || new Error(
+    "Tous les modèles disponibles ont échoué."
+  );
 }
 /**
  * Décode une chaîne Base64 en tableau d'octets optimisé pour la vision Workers AI

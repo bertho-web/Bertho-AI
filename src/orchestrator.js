@@ -3,7 +3,7 @@
  * BERTHO AI — INTENT ORCHESTRATOR
  */
 
-import { AI_MODELS } from "./model.js";
+import { AI_MODELS, runWithModelFallback } from "./model.js";
 import { getCapabilities } from "./capabilities.js";
 
 const VALID_ACTIONS = [
@@ -220,47 +220,107 @@ const prompt = buildDecisionPrompt(
 );
   const decisionModel = AI_MODELS_SAFE(env);
 
-  try {
-    const rawResult = await env.AI.run(
-      decisionModel,
-      {
-        messages: [
-          {
-            role: "system",
-            content: "Tu es le moteur de décision sémantique de Bertho AI. Retourne exclusivement le JSON demandé."
-          },
-          {
-            role: "user",
-            content: prompt
+try {
+
+
+  const jsonModeSupportedModels = new Set([
+    AI_MODELS.turbo,
+    AI_MODELS.deepseek_r1
+  ]);
+
+  const useJsonMode = jsonModeSupportedModels.has(decisionModel);
+
+  const modelOptions = useJsonMode
+    ? {
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            type: "object",
+            properties: {
+              intent: {
+                type: "string",
+                enum: VALID_INTENTS
+              },
+              action: {
+                type: "string",
+                enum: VALID_ACTIONS
+              },
+              confidence: {
+                type: "number",
+                minimum: 0,
+                maximum: 1
+              },
+              objective: {
+                type: "string"
+              },
+              reasoning: {
+                type: "string"
+              },
+              toolInput: {
+                type: "string"
+              },
+              clarificationQuestion: {
+                type: "string"
+              }
+            },
+            required: [
+              "intent",
+              "action",
+              "confidence",
+              "objective",
+              "reasoning",
+              "toolInput",
+              "clarificationQuestion"
+            ]
           }
-        ],
-        max_tokens: 1000,
-        temperature: 0.1
-      },
-      {
-        gateway: {
-          id: "bertho-gateway",
-          skipCache: true
         }
       }
-    );
+    : {};
 
-    const text = extractModelText(rawResult);
-    const parsed = parseDecisionJSON(text);
-    return normalizeDecision(parsed);
-  } catch (error) {
-    console.error("[Orchestrator] Decision model error:", error);
-    return {
-      intent: "other",
-      action: "answer",
-      confidence: 0,
-      objective: cleanMessage,
-      reasoning: "Orchestrateur indisponible : réponse standard.",
-      toolInput: "",
-      needsClarification: false,
-      clarificationQuestion: ""
-    };
-  }
+  const rawResult = await runWithModelFallback(
+    env,
+    decisionModel,
+    {
+      messages: [
+        {
+          role: "system",
+          content:
+            "Tu es le moteur de décision sémantique de Bertho AI. Retourne exclusivement l'objet JSON demandé. Ne réponds jamais directement à l'utilisateur."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      max_tokens: 4096,
+      temperature: 0.1,
+      ...modelOptions
+    }
+  );
+
+  const text = extractModelText(rawResult);
+  const parsed = parseDecisionJSON(text);
+
+  return normalizeDecision(parsed);
+
+} catch (error) {
+  console.error(
+    "[Orchestrator] Decision model error:",
+    error?.message || String(error),
+    error
+  );
+
+  return {
+    intent: "other",
+    action: "answer",
+    confidence: 0,
+    objective: cleanMessage,
+    reasoning: "Orchestrateur indisponible : réponse standard.",
+    toolInput: "",
+    needsClarification: false,
+    clarificationQuestion: ""
+  };
+}
 }
 
 export function requiresTool(decision) {
