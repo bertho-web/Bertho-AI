@@ -805,11 +805,13 @@ export default {
               result?.result ||
               JSON.stringify(result);
 
-            const systemPrompt =
+                       const systemPrompt =
               buildSystemPrompt(
                 fullContext.product,
-                fullContext
+                fullContext,
+                env
               );
+
 
             const contextInstructions =
               fullContext.image
@@ -909,11 +911,13 @@ export default {
                   auditResult
                 );
 
-            const systemPrompt =
+                        const systemPrompt =
               buildSystemPrompt(
                 fullContext.product,
-                fullContext
+                fullContext,
+                env
               );
+
 
             const contextInstructions =
               buildContextInstructions(
@@ -1004,11 +1008,13 @@ export default {
               result?.result ||
               JSON.stringify(result);
 
-            const systemPrompt =
+                        const systemPrompt =
               buildSystemPrompt(
                 fullContext.product,
-                fullContext
+                fullContext,
+                env
               );
+
 
             const contextInstructions =
               buildContextInstructions(
@@ -1078,11 +1084,13 @@ export default {
         // G. RÉPONSE CONVERSATIONNELLE NORMALE
         // --------------------------------------------------------
 
-        const systemPrompt =
+                const systemPrompt =
           buildSystemPrompt(
             fullContext.product,
-            fullContext
+            fullContext,
+            env
           );
+
 
         const contextInstructions =
           fullContext.image

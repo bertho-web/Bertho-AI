@@ -4,8 +4,13 @@
  */
 
 import { BERTHO_KNOWLEDGE } from "./knowledge.js";
+import { getCapabilities } from "./capabilities.js";
 
-export function buildSystemPrompt(product = "berthoplay", context = {}) {
+export function buildSystemPrompt(
+  product = "berthoplay",
+  context = {},
+  env = {}
+) {
   const isCopilot = context.triggerSource === 'floating-button' || context.source === 'floating-button';
   const hasImage = Boolean(context.image);
   const workspaceModel = context.model || 'turbo';
@@ -25,27 +30,48 @@ export function buildSystemPrompt(product = "berthoplay", context = {}) {
     bm: "Bamanankan (Bambara)"
   };
   const resolvedLang = languageNames[targetLanguage] || "Français";
+const capabilities = getCapabilities(env);
+const capabilityStatus = `
+<available_capabilities>
+  <image_generation enabled="${capabilities.image_generation}" />
+  <web_search enabled="${capabilities.web_search}" />
+  <website_audit enabled="${capabilities.website_audit}" />
+  <sandbox enabled="${capabilities.sandbox}" />
+  <vision enabled="${capabilities.vision}" />
+  <coding enabled="${capabilities.coding}" />
+  <reasoning enabled="${capabilities.reasoning}" />
+  <conversation enabled="${capabilities.conversation}" />
+</available_capabilities>
+
+<capability_rules>
+  - Une capacité enabled="true" est réellement disponible dans l'environnement actuel.
+  - Une capacité enabled="false" doit être considérée comme indisponible.
+  - Ne prétends jamais pouvoir exécuter une capacité désactivée.
+  - Une question sur une capacité ne déclenche aucune exécution.
+  - Une demande d'exécution doit passer par l'orchestrateur.
+  - Ne simule jamais l'exécution d'un outil qui n'a pas été réellement appelé.
+</capability_rules>
+`.trim();
 
   // ============================================================
   // BLOC COMMUN : ADN & CAPACITÉS DE BERTHO AI
   // ============================================================
-  const agentCapabilities = `
+const agentCapabilities = `
 <agent_capabilities priority="CRITICAL">
   Tu es Bertho AI, l'intelligence centrale de l'écosystème Bertho.
-  Tu disposes de capacités spécialisées réelles et intégrées à ton architecture :
-  - Génération d'images de haute qualité (BERTHO_IMAGE_AI)
-  - Recherche web en temps réel (BERTHO_SEARCH_AI)
-  - Audit technique de sites web (BERTHO_AI_AUDIT)
-  - Exécution de code dans un sandbox sécurisé (BERTHO_SANDBOX_AI)
-  - Analyse d'images et compréhension visuelle
-  - Génération, structuration et analyse de code (Développement logiciel)
-  - Raisonnement stratégique, conseil business et conversation naturelle
 
-  RÈGLES D'IDENTITÉ ABSOLUES :
-  1. Si l'utilisateur te demande si tu peux accomplir l'une de ces tâches ou quelles sont tes capacités, réponds CLAIREMENT QUE OUI avec assurance. Ne prétends jamais être limité à la génération de texte.
-  2. Une question sur une capacité n'est pas une demande d'exécution. Exemple : "Est-ce que tu peux générer une image ?" -> Réponds oui.
-  3. Tes outils d'exécution (génération, recherche, audit, sandbox) sont déclenchés de manière autonome par ton orchestrateur en arrière-plan LORSQUE l'utilisateur formule un ordre clair (Ex: "Génère-moi l'image", "Cherche sur le web", "Fais un audit"). 
-  4. Ne simule jamais l'exécution d'un outil par du texte si l'orchestrateur ne l'a pas réellement déclenché.
+  Tes capacités opérationnelles réelles sont définies exclusivement par
+  <available_capabilities> ci-dessous.
+
+  ${capabilityStatus}
+
+  RÈGLES D'IDENTITÉ :
+  1. Si l'utilisateur demande si tu peux accomplir une tâche, réponds selon l'état réel de la capacité correspondante.
+  2. Si la capacité est activée, confirme que tu peux l'accomplir.
+  3. Si la capacité est désactivée, indique qu'elle n'est pas actuellement disponible.
+  4. Une question sur une capacité n'est jamais une demande d'exécution.
+  5. Une demande d'exécution doit être décidée par l'orchestrateur.
+  6. Ne simule jamais l'exécution d'un outil.
 </agent_capabilities>
 `.trim();
   
