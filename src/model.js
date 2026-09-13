@@ -25,7 +25,61 @@ const GATEWAY_OPTIONS = {
     skipCache: true
   }
 };
-
+/**
+ * Exécute un modèle avec une cascade de secours.
+ * Le modèle demandé reste toujours prioritaire.
+ * Aucun modèle principal n'est remplacé.
+ */
+export async function runWithModelFallback(
+  env,
+  modelKey,
+  input,
+  options = {}
+) {
+  const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
+  
+  const fallbackKeys = [
+    "deepseek_r1",
+    "turbo"
+  ];
+  
+  const modelsToTry = [
+    targetModel,
+    ...fallbackKeys
+    .map(key => AI_MODELS[key])
+    .filter(model => model && model !== targetModel)
+  ];
+  
+  let lastError = null;
+  
+  for (let index = 0; index < modelsToTry.length; index++) {
+    const model = modelsToTry[index];
+    
+    try {
+      console.log(
+        `[AI Engine] Tentative modèle ${index + 1}/${modelsToTry.length}: ${model}`
+      );
+      
+      return await env.AI.run(
+        model,
+        input,
+        {
+          ...GATEWAY_OPTIONS,
+          ...options
+        }
+      );
+    } catch (error) {
+      lastError = error;
+      
+      console.warn(
+        `[AI Engine] Échec modèle ${model}:`,
+        error?.message || String(error)
+      );
+    }
+  }
+  
+  throw lastError || new Error("Tous les modèles disponibles ont échoué.");
+}
 /**
  * Décode une chaîne Base64 en tableau d'octets optimisé pour la vision Workers AI
  */
