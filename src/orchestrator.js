@@ -101,7 +101,10 @@ Page : ${context?.page || "inconnue"}
 Source : ${context?.source || "inconnue"}
 Langue : ${context?.language || "fr"}
 Modèle sélectionné : ${context?.model || "turbo"}
-
+==================================================
+CAPACITÉS RÉELLEMENT DISPONIBLES
+==================================================
+${JSON.stringify(capabilities, null, 2)}
 ==================================================
 HISTORIQUE RÉCENT
 ==================================================
@@ -207,7 +210,14 @@ export async function decide(env, {
     };
   }
 
-  const prompt = buildDecisionPrompt(cleanMessage, history, context);
+const capabilities = getCapabilities(env);
+
+const prompt = buildDecisionPrompt(
+  cleanMessage,
+  history,
+  context,
+  capabilities
+);
   const decisionModel = AI_MODELS_SAFE(env);
 
   try {
