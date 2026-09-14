@@ -306,7 +306,7 @@ export default {
     // 2. AUTHENTICATION SERVEUR-À-SERVEUR
     // ============================================================
 
-    if (!isAuthorized(request, env)) {
+   if (!(await isAuthorized(request, env))) {
       return json(
         {
           success: false,
