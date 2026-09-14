@@ -1,255 +1,209 @@
 /**
  * bertho-ai/src/model.js
- * Moteur d'inférence multi-modèles de frontière et orchestrateur de microservices Edge (0 Émoji).
+ * Moteur d'inférence multi-modèles de frontière Edge (Zero-Downtime, Zéro Émoji).
  */
 
 export const AI_MODELS = {
-  // 1. MOTEURS PRINCIPAUX ASSIGNÉS AUX RÔLES UTILISATEURS
-  turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  neural: "@cf/moonshotai/kimi-k2.6", // Upgrade 1T MoE (Contexte 262k)
-  gaming: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-  vision: "@cf/zhipuai/glm-5.3-flash", // Upgrade Multimodal 320B
+  // 1. MOTEUR UNIVERSEL & MULTIMODAL (320B MoE Natif - 1.3M Tokens - Z.ai)
+  vision: "@cf/zai-org/glm-5.3-flash",
+  glm: "@cf/zai-org/glm-5.3-flash",
+  glm_coding: "@cf/zai-org/glm-5.3",
   
-  // 2. MODÈLES DE FRONTÈRE & PARACHUTES DE SECOURS
-  deepseek_r1: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-  qwen: "@cf/qwen/qwen3.8-27b",
-  llama_vision: "@cf/meta/llama-3.2-11b-vision-instruct",
+  // 2. MOTEUR DE RAISONNEMENT PROFOND & STRATÉGIE (1M Tokens)
+  neural: "@cf/deepseek-ai/deepseek-v4-pro-0813",
   deepseek_v4: "@cf/deepseek-ai/deepseek-v4-pro-0813",
+  kimi: "@cf/deepseek-ai/deepseek-v4-pro-0813", // Résolution de l'alias Lab
+  deepseek_r1: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+  
+  // 3. LOGIQUE MULTILINGUE & ORCHESTRATION (262k Tokens)
+  qwen: "@cf/qwen/qwen3.8-27b",
+  
+  // 4. MOTEUR RAPIDE & FILET DE SÉCURITÉ DE SECOURS (Llama 3.3 70B Turbo)
+  turbo: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  gaming: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  
+  // 5. SECOURS VISION & STUDIO GRAPHIQUE
+  llama_vision: "@cf/meta/llama-3.2-11b-vision-instruct",
   flux_image: "@cf/black-forest-labs/flux-1-schnell"
 };
 
-// CONFIGURATION DE LA PASSERELLE CLOUDFLARE (Observabilité & Haute Disponibilité)
+// Configuration Passerelle Cloudflare AI Gateway
 const GATEWAY_OPTIONS = {
   gateway: {
     id: "bertho-gateway",
     skipCache: true
   }
 };
-/**
- * Exécute un modèle avec une cascade de secours.
- * Le modèle demandé reste toujours prioritaire.
- * Aucun modèle principal n'est remplacé.
- */
-/**
- * Exécute un modèle avec une cascade de secours.
- *
- * Le modèle demandé reste toujours prioritaire.
- * Les modèles principaux ne sont jamais remplacés.
- *
- * @param {object} env
- * @param {string} modelKey - Clé du modèle dans AI_MODELS
- * @param {object} input - Payload envoyé à Workers AI
- * @param {object} options - Options supplémentaires pour env.AI.run()
- */
-export async function runWithModelFallback(
-  env,
-  modelKey,
-  input,
-  options = {}
-) {
-  const targetModel = AI_MODELS[modelKey] || modelKey || AI_MODELS.turbo;
-  
-  const fallbackModels = [
+
+function resolveModel(modelKey) {
+  return AI_MODELS[modelKey] || modelKey || AI_MODELS.turbo;
+}
+
+function getFallbackModels(targetModel) {
+  return [
     AI_MODELS.deepseek_r1,
     AI_MODELS.turbo
   ].filter(
-    (model, index, array) =>
+    (model, idx, arr) =>
     model &&
     model !== targetModel &&
-    array.indexOf(model) === index
-  );
-  
-  const modelsToTry = [
-    targetModel,
-    ...fallbackModels
-  ];
-  
-  let lastError = null;
-  
-  for (let index = 0; index < modelsToTry.length; index++) {
-    const model = modelsToTry[index];
-    
-    try {
-      console.log(
-        `[AI Engine] Tentative ${index + 1}/${modelsToTry.length}: ${model}`
-      );
-      
-      return await env.AI.run(
-        model,
-        input,
-        {
-          ...GATEWAY_OPTIONS,
-          ...options
-        }
-      );
-    } catch (error) {
-      lastError = error;
-      
-      console.warn(
-        `[AI Engine] Échec du modèle ${model}:`,
-        error?.message || String(error)
-      );
-    }
-  }
-  
-  throw lastError || new Error(
-    "Tous les modèles disponibles ont échoué."
+    arr.indexOf(model) === idx
   );
 }
+
 /**
- * Décode une chaîne Base64 en tableau d'octets optimisé pour la vision Workers AI
+ * Décode une image Base64 de façon sécurisée et compatible Workers AI.
  */
-function base64ToByteArray(base64String) {
+function base64ToImagePayload(base64String) {
   try {
-    const cleanBase64 = base64String.replace(/^data:[^;]+;base64,/i, '');
+    const cleanBase64 = base64String.replace(/^data:[^;]+;base64,/i, "").trim();
     const binary = atob(cleanBase64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return Array.from(bytes);
-  } catch (e) {
-    console.error('[Vision Error] Échec conversion base64 en bytes:', e);
+    // Si < 2 Mo, Array standard pour compatibilité universelle avec le binding
+    // Si > 2 Mo, Uint8Array direct pour protéger la mémoire RAM (128 Mo)
+    return bytes.length < 2 * 1024 * 1024 ? Array.from(bytes) : bytes;
+  } catch (error) {
+    console.error("[Vision Engine] Échec décodage image base64:", error);
     return null;
   }
 }
 
-// ============================================================================
-// 1. MOTEUR D'INFÉRENCE PRINCIPAL (TEXTE, RAISONNEMENT & VISION MULTIMODALE)
-// ============================================================================
-export async function generateResponse(env, messages, modelKey = 'turbo', rawImageBase64 = null) {
+/**
+ * Exécute un modèle avec cascade de repli intelligente.
+ * Utilisé par orchestrator.js et en interne.
+ */
+export async function runWithModelFallback(env, modelKey, input, options = {}) {
+  const targetModel = resolveModel(modelKey);
+  const modelsToTry = [targetModel, ...getFallbackModels(targetModel)];
   
-  // A. BRANCHE VISION MULTI-MODALE (Si une image est fournie)
+  let lastError = null;
+  
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const model = modelsToTry[i];
+    try {
+      console.log(`[AI Engine] Tentative ${i + 1}/${modelsToTry.length} : ${model}`);
+      return await env.AI.run(model, input, {
+        ...GATEWAY_OPTIONS,
+        ...options
+      });
+    } catch (err) {
+      lastError = err;
+      console.warn(`[AI Engine] Échec sur ${model} :`, err?.message || String(err));
+    }
+  }
+  
+  throw lastError || new Error("Tous les modèles de la cascade ont échoué.");
+}
+
+/**
+ * Point d'entrée d'inférence universel (Texte, Raisonnement et Vision Multimodale).
+ * Importé par index.js.
+ */
+export async function generateResponse(env, messages, modelKey = "turbo", rawImageBase64 = null) {
+  
+  // ==========================================================
+  // BRANCHE A : VISION MULTIMODALE (Image transmise)
+  // ==========================================================
   if (rawImageBase64) {
-    const imageBytes = base64ToByteArray(rawImageBase64);
-    if (imageBytes && imageBytes.length > 0) {
-      
+    const imagePayload = base64ToImagePayload(rawImageBase64);
+    
+    if (imagePayload && imagePayload.length > 0) {
       let systemPrompt = "";
-      let userPrompt = "Analyse et décris cette image en détail.";
+      let conversationHistory = [];
+      let latestUserPrompt = "Analyse et décris cette image avec une précision chirurgicale.";
       
       if (Array.isArray(messages)) {
-        const sysMsg = messages.find(m => m.role === 'system');
-        const lastUser = messages.filter(m => m.role === 'user').pop();
-        
-        if (sysMsg && sysMsg.content) systemPrompt = sysMsg.content;
-        if (lastUser && lastUser.content) userPrompt = lastUser.content;
+        for (const msg of messages) {
+          if (msg.role === "system") {
+            systemPrompt = msg.content;
+          } else if (msg.role === "user") {
+            latestUserPrompt = msg.content;
+            conversationHistory.push(`UTILISATEUR: ${msg.content}`);
+          } else if (msg.role === "assistant") {
+            conversationHistory.push(`BERTHO AI: ${msg.content}`);
+          }
+        }
       }
       
-      const combinedPrompt = systemPrompt ?
-        `${systemPrompt}\n\nInstruction utilisateur : ${userPrompt}` :
-        userPrompt;
+      // Reconstruction intégrale du dialogue pour ne jamais perdre le fil
+      const formattedPrompt = [
+        systemPrompt ? `[DIRECTIVES SYSTÈME]\n${systemPrompt}` : "",
+        conversationHistory.length > 1 ? `[HISTORIQUE CONVERSATIONNEL]\n${conversationHistory.slice(0, -1).join("\n\n")}` : "",
+        `[INSTRUCTION ACTUELLE]: ${latestUserPrompt}`
+      ].filter(Boolean).join("\n\n");
       
-      // Essai 1 : Modèle de vision principal (GLM-5.3 Multimodal)
+      // Essai 1 : GLM-5.3 Flash (Multimodal natif 1.3M tokens)
       try {
         const visionResult = await env.AI.run(
           AI_MODELS.vision,
           {
-            prompt: String(combinedPrompt),
-            image: imageBytes,
-            max_tokens: 2048
+            prompt: formattedPrompt,
+            image: imagePayload,
+            max_tokens: 4096
           },
           GATEWAY_OPTIONS
         );
         if (visionResult) return visionResult;
-      } catch (visionError) {
-        console.warn('[Vision Primary Warning]:', visionError);
+      } catch (primaryVisionError) {
+        console.warn("[Vision Engine] Échec GLM-5.3 Flash, bascule sur Llama Vision :", primaryVisionError);
         
-        // Essai 2 : Fallback sur Llama 3.2 Vision avec accord de licence automatique
+        // Essai 2 : Fallback sur Llama 3.2 Vision
         try {
-          if (String(visionError).includes('agree') || String(visionError).includes('license')) {
-            await env.AI.run(AI_MODELS.llama_vision, { prompt: "agree" }, GATEWAY_OPTIONS);
-          }
-          const backupVisionResult = await env.AI.run(
+          return await env.AI.run(
             AI_MODELS.llama_vision,
             {
-              prompt: String(combinedPrompt),
-              image: imageBytes,
+              prompt: formattedPrompt,
+              image: imagePayload,
               max_tokens: 2048
             },
             GATEWAY_OPTIONS
           );
-          if (backupVisionResult) return backupVisionResult;
-        } catch (backupErr) {
-          console.error('[Vision Backup Error]:', backupErr);
+        } catch (secondaryVisionError) {
+          console.error("[Vision Engine] Échec critique vision :", secondaryVisionError);
         }
       }
     }
   }
   
-  // B. BRANCHE TEXTE & RAISONNEMENT AVEC CASCADE DE SECOURS (ZÉRO PANNE)
-  const targetModel = AI_MODELS[modelKey] || AI_MODELS.turbo;
-  const isNeural = modelKey === 'neural' || modelKey === 'kimi' || modelKey === 'glm';
+  // ==========================================================
+  // BRANCHE B : TEXTE, CODE & RAISONNEMENT (Cascade Zero-Panne)
+  // ==========================================================
+  const targetModel = resolveModel(modelKey);
+  const isDeepReasoning =
+    targetModel === AI_MODELS.neural ||
+    targetModel === AI_MODELS.deepseek_v4 ||
+    targetModel === AI_MODELS.deepseek_r1;
   
-  try {
-    // 1er Palier : Tentative sur le modèle cible sélectionné
-    return await env.AI.run(
-      targetModel,
-      {
-        messages,
-        max_tokens: 4096,
-        temperature: isNeural ? 0.6 : 0.7
-      },
-      GATEWAY_OPTIONS
-    );
-  } catch (primaryError) {
-    console.warn(`[AI Engine] Erreur sur ${targetModel}, repli sur palier 2 (DeepSeek-R1) :`, primaryError);
-    
-    // 2ème Palier : Repli sur DeepSeek-R1 (32B) si le modèle était un géant
-    if (targetModel !== AI_MODELS.deepseek_r1 && targetModel !== AI_MODELS.turbo) {
-      try {
-        return await env.AI.run(
-          AI_MODELS.deepseek_r1,
-          {
-            messages,
-            max_tokens: 4096,
-            temperature: 0.6
-          },
-          GATEWAY_OPTIONS
-        );
-      } catch (secondaryError) {
-        console.warn('[AI Engine] Échec palier 2, repli final sur Llama 70B Turbo :', secondaryError);
-      }
+  return await runWithModelFallback(
+    env,
+    targetModel,
+    {
+      messages,
+      max_tokens: 4096,
+      temperature: isDeepReasoning ? 0.6 : 0.7
     }
-    
-    // 3ème Palier (Filet de sécurité absolu) : Llama 3.3 70B Turbo
-    if (targetModel !== AI_MODELS.turbo) {
-      return await env.AI.run(
-        AI_MODELS.turbo,
-        {
-          messages,
-          max_tokens: 4096,
-          temperature: 0.7
-        },
-        GATEWAY_OPTIONS
-      );
-    }
-    
-    throw primaryError;
-  }
+  );
 }
 
-// ============================================================================
-// 2. ORCHESTRATEUR DE MICROSERVICES SATELLITES (IMAGE, SEARCH, SANDBOX)
-// ============================================================================
-
-/**
- * Génère une image haute résolution via le microservice ou directement avec FLUX.1
- */
+// Utilitaires de secours directs
 export async function generateImage(env, prompt, steps = 4) {
-  if (!prompt || typeof prompt !== 'string') throw new Error('Prompt image requis.');
+  if (!prompt || typeof prompt !== "string") throw new Error("Prompt image requis.");
   const cleanSteps = Math.min(Math.max(parseInt(steps, 10) || 4, 1), 8);
   
-  // 1. Appel via le Worker satellite si la liaison de service existe
   if (env.BERTHO_IMAGE_AI) {
-    const res = await env.BERTHO_IMAGE_AI.fetch(new Request('https://bertho-ai-image.internal/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt.trim(), steps: cleanSteps })
-    }));
+    const res = await env.BERTHO_IMAGE_AI.fetch(
+      new Request("https://bertho-ai-image.internal/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.trim(), steps: cleanSteps })
+      })
+    );
     return await res.json();
   }
   
-  // 2. Appel direct de secours en mémoire vive si le worker satellite n'est pas bindé
   const response = await env.AI.run(AI_MODELS.flux_image, {
     prompt: prompt.trim(),
     steps: cleanSteps
@@ -260,7 +214,7 @@ export async function generateImage(env, prompt, steps = 4) {
     (response instanceof Uint8Array ? response.buffer : await new Response(response).arrayBuffer());
   
   const bytes = new Uint8Array(buffer);
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -271,38 +225,32 @@ export async function generateImage(env, prompt, steps = 4) {
   };
 }
 
-/**
- * Recherche des actualités en direct sur le web via le microservice de recherche
- */
 export async function searchWeb(env, query) {
-  if (!query || typeof query !== 'string') throw new Error('Requête de recherche requise.');
-  
+  if (!query || typeof query !== "string") throw new Error("Requête de recherche requise.");
   if (env.BERTHO_SEARCH_AI) {
-    const res = await env.BERTHO_SEARCH_AI.fetch(new Request('https://bertho-ai-search.internal/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: query.trim() })
-    }));
+    const res = await env.BERTHO_SEARCH_AI.fetch(
+      new Request("https://bertho-ai-search.internal/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: query.trim() })
+      })
+    );
     return await res.json();
   }
-  
-  return { success: false, error: 'search_service_unavailable' };
+  return { success: false, error: "search_service_unavailable" };
 }
 
-/**
- * Exécute du code ou un calcul dans le microservice de bac à sable isolé
- */
-export async function executeSandbox(env, code, language = 'javascript') {
-  if (!code || typeof code !== 'string') throw new Error('Code à exécuter requis.');
-  
+export async function executeSandbox(env, code, language = "javascript") {
+  if (!code || typeof code !== "string") throw new Error("Code à exécuter requis.");
   if (env.BERTHO_SANDBOX_AI) {
-    const res = await env.BERTHO_SANDBOX_AI.fetch(new Request('https://bertho-ai-sandbox.internal/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: code.trim(), language: language })
-    }));
+    const res = await env.BERTHO_SANDBOX_AI.fetch(
+      new Request("https://bertho-ai-sandbox.internal/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code.trim(), language })
+      })
+    );
     return await res.json();
   }
-  
-  return { success: false, error: 'sandbox_service_unavailable' };
+  return { success: false, error: "sandbox_service_unavailable" };
 }
