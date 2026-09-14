@@ -1,6 +1,6 @@
 /**
  * bertho-ai/src/orchestrator.js
- * BERTHO AI — INTENT ORCHESTRATOR
+ * BERTHO AI — INTENT ORCHESTRATOR (Haute Vélocité & Zéro Latence)
  */
 
 import { AI_MODELS, runWithModelFallback } from "./model.js";
@@ -37,11 +37,9 @@ function cleanText(value) {
 
 function normalizeConfidence(value) {
   const number = Number(value);
-
   if (!Number.isFinite(number)) {
     return 0.5;
   }
-
   return Math.min(Math.max(number, 0), 1);
 }
 
@@ -69,6 +67,70 @@ function normalizeDecision(decision = {}) {
   };
 }
 
+/**
+ * Fast-path déterministe (0 milliseconde de latence)
+ * Évite tout appel LLM pour les salutations ou les intentions évidentes.
+ */
+function getFastPathDecision(message = "", context = {}) {
+  const clean = cleanText(message).toLowerCase();
+
+  // 1. Salutations directes (0 ms)
+  const directGreetings = [
+    "salut", "bonjour", "bonsoir", "coucou", "hello", "hi", "hey",
+    "mbote", "yo", "kedu", "salut !", "bonjour !", "bonsoir !"
+  ];
+  if (directGreetings.includes(clean)) {
+    return {
+      intent: "conversation",
+      action: "answer",
+      confidence: 1.0,
+      objective: "Saluer l'utilisateur avec stature et prestance",
+      reasoning: "Fast-path : salutation directe (0ms)",
+      toolInput: "",
+      needsClarification: false,
+      clarificationQuestion: ""
+    };
+  }
+
+  // 2. Image présente dans le contexte sans commande d'outil externe
+  const hasAuditKeyword = /(audit|analyse|diagnostique|inspecte|scan)/i.test(clean);
+  const hasSearchKeyword = /(cherche|recherche sur le web|actualité)/i.test(clean);
+
+  if (context?.image && !hasAuditKeyword && !hasSearchKeyword) {
+    return {
+      intent: "analysis",
+      action: "answer",
+      confidence: 1.0,
+      objective: "Analyse visuelle multimodale approfondie de l'image transmise",
+      reasoning: "Fast-path : image détectée dans le contexte (0ms)",
+      toolInput: "",
+      needsClarification: false,
+      clarificationQuestion: ""
+    };
+  }
+
+  // 3. Détection d'URL pour Audit avec auto-réparation de protocole
+  const urlMatch = message.match(/(https?:\/\/[^\s"'<>]+|(?:\b[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s"'<>]*)?)/i);
+  if (hasAuditKeyword && urlMatch) {
+    let targetUrl = urlMatch[0].replace(/[),.!?]+$/, "");
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+      targetUrl = `https://${targetUrl}`;
+    }
+    return {
+      intent: "website_audit",
+      action: "website_audit",
+      confidence: 0.98,
+      objective: `Audit technique du site web : ${targetUrl}`,
+      reasoning: "Fast-path : audit détecté avec URL valide (0ms)",
+      toolInput: targetUrl,
+      needsClarification: false,
+      clarificationQuestion: ""
+    };
+  }
+
+  return null;
+}
+
 function buildDecisionPrompt(
   message,
   history,
@@ -76,7 +138,7 @@ function buildDecisionPrompt(
   capabilities
 ) {
   const safeHistory = Array.isArray(history)
-    ? history.slice(-12)
+    ? history.slice(-6)
     : [];
 
   const historyText = safeHistory
@@ -95,126 +157,27 @@ function buildDecisionPrompt(
     })
     .join("\n");
 
-  return `
-Tu es le moteur de décision sémantique de Bertho AI.
+  return `Tu es le moteur de décision sémantique ultra-rapide de Bertho AI.
+Ta mission est de classifier la demande et de retourner UNIQUEMENT un objet JSON valide, sans aucun texte autour.
 
-Ta mission n'est PAS de répondre à l'utilisateur.
-Ta mission est de comprendre ce qu'il cherche réellement à accomplir et de déterminer l'action appropriée.
+ACTIONS :
+1. "answer" : Réponse textuelle, conseil, stratégie, code sans exécution, ou analyse d'image.
+2. "ask_clarification" : Impossible de comprendre sans précision.
+3. "generate_image" : Demande formelle de créer/générer une image maintenant.
+4. "search_web" : Demande de faits actuels ou recherche externe requise.
+5. "website_audit" : Audit d'une URL de site web.
+6. "sandbox" : Exécution réelle de code ou calcul complexe dans un bac à sable.
 
-PRINCIPE CRITIQUE :
-NE DÉCLENCHE JAMAIS UN OUTIL UNIQUEMENT À CAUSE D'UN MOT-CLÉ.
-Analyse toujours l'intention complète et le contexte.
-
-Exemple :
-"Je crée une image pour mon ebook, tu me conseilles quoi ?"
-=> CONSEIL, donc action = "answer".
-
-"Crée-moi maintenant la couverture de mon ebook."
-=> GÉNÉRATION D'IMAGE, donc action = "generate_image".
-
-==================================================
-CONTEXTE
-==================================================
-
+CONTEXTE :
 Produit : ${context?.product || "inconnu"}
-Espace : ${context?.area || "inconnu"}
-Page : ${context?.page || "inconnue"}
-Source : ${context?.source || "inconnue"}
-Langue : ${context?.language || "fr"}
-Modèle sélectionné : ${context?.model || "turbo"}
+Capacités : ${JSON.stringify(capabilities)}
+Historique :
+${historyText || "Aucun"}
 
-==================================================
-CAPACITÉS RÉELLEMENT DISPONIBLES
-==================================================
-
-${JSON.stringify(capabilities, null, 2)}
-
-==================================================
-HISTORIQUE RÉCENT
-==================================================
-
-${historyText || "Aucun historique disponible."}
-
-==================================================
-MESSAGE ACTUEL
-==================================================
-
+MESSAGE :
 ${message}
 
-==================================================
-INTENTIONS DISPONIBLES
-==================================================
-
-${VALID_INTENTS.join(", ")}
-
-==================================================
-ACTIONS DISPONIBLES
-==================================================
-
-${VALID_ACTIONS.join(", ")}
-
-==================================================
-RÈGLES DE DÉCISION
-==================================================
-
-1. "answer"
-Utilise cette action lorsqu'une réponse textuelle normale, une explication, une recommandation, une stratégie, une analyse ou un conseil suffit.
-
-2. "ask_clarification"
-Utilise cette action uniquement lorsqu'il est réellement impossible de comprendre l'objectif sans précision supplémentaire.
-
-3. "generate_image"
-Utilise cette action uniquement lorsque l'utilisateur demande réellement de générer, créer, produire ou modifier une image maintenant.
-
-4. "search_web"
-Utilise cette action lorsque la demande nécessite réellement une recherche externe ou des informations actuelles.
-
-5. "website_audit"
-Utilise cette action lorsqu'un audit réel de site web est demandé et qu'une URL exploitable est disponible.
-
-6. "sandbox"
-Utilise cette action lorsqu'une exécution réelle de code, un calcul ou une vérification dans un environnement d'exécution est nécessaire.
-
-7. Si l'utilisateur demande du code mais ne demande pas de l'exécuter :
-action = "answer".
-
-8. Si l'utilisateur demande une stratégie, un conseil, une recommandation ou une explication :
-action = "answer".
-
-9. "creation" ne signifie PAS automatiquement "image_generation".
-Une création peut être du texte, du code, une stratégie, une structure ou une idée.
-
-10. Une simple mention d'une image, photo, illustration, couverture, logo ou visuel ne constitue PAS une demande de génération.
-
-11. Une demande d'avis, de conseil ou de recommandation concernant une image reste :
-action = "answer".
-
-12. Le dernier message doit être interprété comme une continuation naturelle de la conversation lorsqu'il dépend des messages précédents.
-
-13. Les expressions :
-"finalement", "plutôt", "je préfère", "change", "modifie",
-"garde ça mais...", "fais plutôt..."
-peuvent modifier une demande précédente.
-Analyse alors l'ensemble du contexte.
-
-14. Ne demande jamais à l'utilisateur de répéter une information déjà présente dans l'historique.
-
-15. Pour une demande directe d'action spécialisée, récupère dans :
-- objective : l'objectif précis
-- toolInput : URL, requête, code ou autre entrée nécessaire à l'outil
-
-16. Si plusieurs interprétations sont possibles mais qu'une interprétation est nettement plus probable, choisis-la plutôt que de demander inutilement une clarification.
-
-==================================================
-FORMAT DE SORTIE
-==================================================
-
-Retourne UNIQUEMENT un objet JSON valide.
-
-Aucun texte avant ou après le JSON.
-
-Format :
-
+FORMAT JSON STRICT REQUIS :
 {
   "intent": "conversation",
   "action": "answer",
@@ -223,62 +186,34 @@ Format :
   "reasoning": "Courte justification",
   "toolInput": "",
   "clarificationQuestion": ""
-}
-`.trim();
+}`.trim();
 }
 
 function AI_MODELS_SAFE(env) {
+  // L'orchestrateur utilise TOUJOURS Llama 70B Turbo pour une vitesse d'exécution chirurgicale
   return (
     env?.BERTHO_ORCHESTRATOR_MODEL ||
-    AI_MODELS.neural ||
     AI_MODELS.turbo
   );
 }
 
 function extractModelText(result) {
-  if (!result) {
-    return "";
-  }
-
-  if (typeof result === "string") {
-    return result;
-  }
-
-  if (typeof result.response === "string") {
-    return result.response;
-  }
-
-  if (typeof result.result === "string") {
-    return result.result;
-  }
-
-  if (
-    result.result &&
-    typeof result.result.response === "string"
-  ) {
-    return result.result.response;
-  }
-
-  if (typeof result.message === "string") {
-    return result.message;
-  }
-
-  if (
-    result.message &&
-    typeof result.message.response === "string"
-  ) {
-    return result.message.response;
-  }
-
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  if (typeof result.response === "string") return result.response;
+  if (typeof result.result === "string") return result.result;
+  if (result.result && typeof result.result.response === "string") return result.result.response;
+  if (typeof result.message === "string") return result.message;
+  if (result.message && typeof result.message.response === "string") return result.message.response;
   return "";
 }
 
 function parseDecisionJSON(text) {
-  if (!text) {
-    return {};
-  }
+  if (!text) return {};
 
+  // Élimination des blocs de réflexion <think> pour ne pas briser le JSON
   let clean = String(text)
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
@@ -291,20 +226,13 @@ function parseDecisionJSON(text) {
     lastBrace !== -1 &&
     lastBrace > firstBrace
   ) {
-    clean = clean.slice(
-      firstBrace,
-      lastBrace + 1
-    );
+    clean = clean.slice(firstBrace, lastBrace + 1);
   }
 
   try {
     return JSON.parse(clean);
   } catch (error) {
-    console.warn(
-      "[Orchestrator] JSON decision invalide:",
-      clean
-    );
-
+    console.warn("[Orchestrator] JSON decision invalide :", clean);
     return {};
   }
 }
@@ -319,7 +247,7 @@ export async function decide(
 ) {
   const cleanMessage = cleanText(message);
 
-  if (!cleanMessage) {
+  if (!cleanMessage && !context?.image) {
     return {
       intent: "other",
       action: "ask_clarification",
@@ -328,13 +256,18 @@ export async function decide(
       reasoning: "Aucun message exploitable.",
       toolInput: "",
       needsClarification: true,
-      clarificationQuestion:
-        "Que souhaitez-vous faire ?"
+      clarificationQuestion: "Que souhaitez-vous faire ?"
     };
   }
 
-  const capabilities = getCapabilities(env);
+  // 1. FAST-PATH DÉTERMINISTE (0 milliseconde de latence)
+  const fastDecision = getFastPathDecision(cleanMessage, context);
+  if (fastDecision) {
+    return fastDecision;
+  }
 
+  // 2. Décision par modèle rapide (Llama 70B Turbo, 256 tokens max)
+  const capabilities = getCapabilities(env);
   const prompt = buildDecisionPrompt(
     cleanMessage,
     history,
@@ -345,72 +278,6 @@ export async function decide(
   const decisionModel = AI_MODELS_SAFE(env);
 
   try {
-    /*
-     * JSON Mode officiel uniquement pour les modèles
-     * que nous avons explicitement déclarés compatibles.
-     *
-     * Si Neural/Kimi est sélectionné et échoue,
-     * runWithModelFallback() pourra basculer vers
-     * DeepSeek puis Turbo.
-     *
-     * Les fallback models reçoivent toujours le prompt
-     * demandant exclusivement du JSON.
-     */
-    const jsonModeSupportedModels = new Set([
-      AI_MODELS.turbo,
-      AI_MODELS.deepseek_r1
-    ]);
-
-    const useJsonMode =
-      jsonModeSupportedModels.has(decisionModel);
-
-    const modelOptions = useJsonMode
-      ? {
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              type: "object",
-              properties: {
-                intent: {
-                  type: "string",
-                  enum: VALID_INTENTS
-                },
-                action: {
-                  type: "string",
-                  enum: VALID_ACTIONS
-                },
-                confidence: {
-                  type: "number",
-                  minimum: 0,
-                  maximum: 1
-                },
-                objective: {
-                  type: "string"
-                },
-                reasoning: {
-                  type: "string"
-                },
-                toolInput: {
-                  type: "string"
-                },
-                clarificationQuestion: {
-                  type: "string"
-                }
-              },
-              required: [
-                "intent",
-                "action",
-                "confidence",
-                "objective",
-                "reasoning",
-                "toolInput",
-                "clarificationQuestion"
-              ]
-            }
-          }
-        }
-      : {};
-
     const rawResult = await runWithModelFallback(
       env,
       decisionModel,
@@ -426,36 +293,28 @@ export async function decide(
             content: prompt
           }
         ],
-        max_tokens: 4096,
-        temperature: 0.1,
-        ...modelOptions
+        max_tokens: 256, // Plafond strict pour éviter toute génération inutile
+        temperature: 0.1
       }
     );
 
     const text = extractModelText(rawResult);
-
     const parsed = parseDecisionJSON(text);
 
     return normalizeDecision(parsed);
 
   } catch (error) {
     console.error(
-      "[Orchestrator] Decision model error:",
-      error?.message || String(error),
-      error
+      "[Orchestrator] Erreur modèle décision :",
+      error?.message || String(error)
     );
 
-    /*
-     * Le moteur principal de réponse reste disponible même
-     * si l'orchestrateur est momentanément indisponible.
-     */
     return {
-      intent: "other",
+      intent: "conversation",
       action: "answer",
-      confidence: 0,
+      confidence: 0.8,
       objective: cleanMessage,
-      reasoning:
-        "Orchestrateur indisponible : réponse standard.",
+      reasoning: "Repli immédiat sur réponse conversationnelle directe.",
       toolInput: "",
       needsClarification: false,
       clarificationQuestion: ""
@@ -464,10 +323,7 @@ export async function decide(
 }
 
 export function requiresTool(decision) {
-  if (!decision) {
-    return false;
-  }
-
+  if (!decision) return false;
   return [
     "generate_image",
     "search_web",
@@ -479,10 +335,6 @@ export function requiresTool(decision) {
 export function validateDecision(decision) {
   const normalized = normalizeDecision(decision);
 
-  /*
-   * Une action spécialisée avec une confiance faible
-   * doit être clarifiée plutôt que déclenchée aveuglément.
-   */
   if (
     normalized.action !== "answer" &&
     normalized.confidence < 0.65
@@ -496,9 +348,6 @@ export function validateDecision(decision) {
     };
   }
 
-  /*
-   * Génération d'image : objectif obligatoire.
-   */
   if (
     normalized.action === "generate_image" &&
     !normalized.objective
@@ -512,9 +361,6 @@ export function validateDecision(decision) {
     };
   }
 
-  /*
-   * Audit : URL obligatoire.
-   */
   if (
     normalized.action === "website_audit" &&
     !normalized.toolInput
